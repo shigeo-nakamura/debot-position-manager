@@ -1,0 +1,17 @@
+[package]
+name = "debot-position-manager"
+version = "0.1.0"
+authors = ["Shigeo NAKAMURA <nakamura_shigeo@yahoo.com>"]
+edition = "2021"
+description = "Functions to manage trade positions"
+documentation = "https://docs.rs/debot-position-manager/"
+homepage = "https://crates.io/crates/debot-position-manager"
+repository = "https://github.com/shigeo-nakamura/debot-position-manager"
+license = "MIT"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4.17"
+chrono = "0.4.24"
+
+debot-utils ="0.1.2"
