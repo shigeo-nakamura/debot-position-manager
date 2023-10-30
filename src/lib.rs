@@ -1,5 +1,5 @@
 mod position_manager;
-mod trad_chance;
+mod trade_chance;
 
 pub use position_manager::*;
-pub use trad_chance::*;
+pub use trade_chance::*;
