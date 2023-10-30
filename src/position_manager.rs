@@ -29,7 +29,8 @@ pub struct TradePosition {
     pub open_time: i64,
     pub open_time_str: String,
     pub close_time_str: String,
-    pub average_buy_price: f64,
+    pub average_open_price: f64,
+    pub is_long_position: bool,
     pub take_profit_price: f64,
     #[serde(skip)]
     pub cut_loss_price: Arc<std::sync::Mutex<f64>>,
@@ -68,7 +69,8 @@ impl TradePosition {
         token_name: &str,
         fund_name: &str,
         take_profit_strategy: TakeProfitStrategy,
-        average_buy_price: f64,
+        average_open_price: f64,
+        is_long_position: bool,
         take_profit_price: f64,
         cut_loss_price: f64,
         amount: f64,
@@ -78,13 +80,19 @@ impl TradePosition {
         predicted_price: Option<f64>,
     ) -> Self {
         log::debug!(
-            "Created new open position for token: {}, average_buy_price: {:6.3}, take_profit_price: {:6.3}, cut_loss_price: {:6.3}, atr:{:?}",
-            token_name, average_buy_price, take_profit_price, cut_loss_price, atr
+            "Created new open position for token: {}, average_open_price: {:6.3}, take_profit_price: {:6.3}, cut_loss_price: {:6.3}, atr:{:?}",
+            token_name, average_open_price, take_profit_price, cut_loss_price, atr
         );
 
         let open_time = chrono::Utc::now().timestamp();
 
         let modified_cut_loss_price = cut_loss_price;
+
+        let trailing_distance = if is_long_position {
+            take_profit_price - average_open_price
+        } else {
+            average_open_price - take_profit_price
+        };
 
         Self {
             id: None,
@@ -95,11 +103,12 @@ impl TradePosition {
             open_time,
             open_time_str: open_time.to_datetime_string(),
             close_time_str: String::new(),
-            average_buy_price,
+            average_open_price,
+            is_long_position,
             take_profit_price,
             cut_loss_price: Arc::new(std::sync::Mutex::new(modified_cut_loss_price)),
             initial_cut_loss_price: modified_cut_loss_price,
-            trailing_distance: take_profit_price - average_buy_price,
+            trailing_distance,
             sold_price: None,
             sold_amount: None,
             amount,
@@ -112,23 +121,32 @@ impl TradePosition {
     }
 
     fn should_take_profit_fixed_threshold(&self, sell_price: f64) -> bool {
-        sell_price >= self.take_profit_price
+        if self.is_long_position {
+            sell_price >= self.take_profit_price
+        } else {
+            sell_price <= self.take_profit_price
+        }
     }
-
     // Adjusts cut loss price and returns false. The cut loss price is adjusted
     // based on the sell price and the trailing distance.
-    fn should_take_profit_trailing_stop(&self, sell_price: f64) -> bool {
-        let current_distance = if sell_price - self.average_buy_price > 0.0 {
-            sell_price - self.average_buy_price
+    fn should_take_profit_trailing_stop(&self, close_price: f64) -> bool {
+        if self.is_long_position {
+            let current_distance = close_price - self.average_open_price;
+            if current_distance > self.trailing_distance {
+                let cut_loss_price = close_price - self.trailing_distance;
+                let mut cut_loss_price_self = self.cut_loss_price.lock().unwrap();
+                if cut_loss_price > *cut_loss_price_self {
+                    *cut_loss_price_self = cut_loss_price;
+                }
+            }
         } else {
-            sell_price - *self.cut_loss_price.lock().unwrap()
-        };
-
-        if current_distance > self.trailing_distance {
-            let cut_loss_price = sell_price - self.trailing_distance;
-            let mut cut_loss_price_self = self.cut_loss_price.lock().unwrap();
-            if cut_loss_price > *cut_loss_price_self {
-                *cut_loss_price_self = cut_loss_price;
+            let current_distance = self.average_open_price - close_price;
+            if current_distance > self.trailing_distance {
+                let cut_loss_price = close_price + self.trailing_distance;
+                let mut cut_loss_price_self = self.cut_loss_price.lock().unwrap();
+                if cut_loss_price < *cut_loss_price_self {
+                    *cut_loss_price_self = cut_loss_price;
+                }
             }
         }
 
@@ -160,11 +178,15 @@ impl TradePosition {
         None
     }
 
-    fn should_early_close(&self, sell_price: f64, max_holding_interval: i64) -> bool {
+    fn should_early_close(&self, close_price: f64, max_holding_interval: i64) -> bool {
         let current_time = chrono::Utc::now().timestamp();
         let holding_interval = current_time - self.open_time;
         if holding_interval > max_holding_interval * 3 / 4 {
-            sell_price > self.average_buy_price
+            if self.is_long_position {
+                close_price > self.average_open_price
+            } else {
+                close_price < self.average_open_price
+            }
         } else {
             return false;
         }
@@ -179,19 +201,25 @@ impl TradePosition {
         }
     }
 
-    fn should_cut_loss(&self, sell_price: f64) -> Option<ReasonForClose> {
+    fn should_cut_loss(&self, close_price: f64) -> Option<ReasonForClose> {
         let cut_loss_price = *self.cut_loss_price.lock().unwrap();
 
-        if sell_price < cut_loss_price {
-            if sell_price > self.average_buy_price {
-                return Some(ReasonForClose::TakeProfit);
-            } else {
-                return Some(ReasonForClose::CutLoss);
+        if self.is_long_position {
+            if close_price < cut_loss_price {
+                if close_price > self.average_open_price {
+                    return Some(ReasonForClose::TakeProfit);
+                } else {
+                    return Some(ReasonForClose::CutLoss);
+                }
             }
-        }
-
-        if self.take_profit_price < cut_loss_price {
-            return None;
+        } else {
+            if close_price > cut_loss_price {
+                if close_price < self.average_open_price {
+                    return Some(ReasonForClose::TakeProfit);
+                } else {
+                    return Some(ReasonForClose::CutLoss);
+                }
+            }
         }
 
         None
@@ -200,7 +228,7 @@ impl TradePosition {
     fn update(&mut self, average_price: f64, amount: f64) {
         if self.state == State::Open {
             self.amount += amount;
-            self.average_buy_price = (self.average_buy_price * self.amount
+            self.average_open_price = (self.average_open_price * self.amount
                 + average_price * amount)
                 / (self.amount + amount);
             log::info!("Updated open position :{:?}", self);
@@ -208,7 +236,7 @@ impl TradePosition {
             self.amount -= amount;
             self.sold_price = Some(average_price);
             self.sold_amount = Some(amount);
-            let pnl = (average_price - self.average_buy_price) * amount;
+            let pnl = self.pnl(average_price, self.average_open_price, self.amount);
             self.realized_pnl = Some(pnl);
             self.close_time_str = DateTimeUtils::get_current_datetime_string();
 
@@ -247,7 +275,6 @@ impl TradePosition {
     }
 
     pub fn print_info(&self, current_price: f64) {
-        let pnl = (current_price - self.average_buy_price) * self.amount;
         let id = match self.id {
             Some(id) => id,
             None => 0,
@@ -257,12 +284,20 @@ impl TradePosition {
             "ID: {:<3} Token: {:<6} PNL: {:>6.3}, current: {:>6.3}, buy: {:>6.3}, take_profit: {:>6.3}, cut_loss: {:>6.3}, amount: {:>6.6}",
             id,
             self.token_name,
-            pnl,
+            self.pnl(current_price, self.average_open_price, self.amount),
             current_price,
-            self.average_buy_price,
+            self.average_open_price,
             self.take_profit_price,
             *self.cut_loss_price.lock().unwrap(),
             self.amount
         );
+    }
+
+    fn pnl(&self, current_price: f64, open_price: f64, amount: f64) -> f64 {
+        (if self.is_long_position {
+            current_price - open_price
+        } else {
+            open_price - current_price
+        }) * amount
     }
 }
