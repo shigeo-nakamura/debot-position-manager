@@ -36,8 +36,8 @@ pub struct TradePosition {
     pub cut_loss_price: Arc<std::sync::Mutex<f64>>,
     pub initial_cut_loss_price: f64,
     pub trailing_distance: f64,
-    pub sold_price: Option<f64>,
-    pub sold_amount: Option<f64>,
+    pub close_price: Option<f64>,
+    pub close_amount: Option<f64>,
     pub amount: f64,
     pub amount_in_anchor_token: f64,
     pub realized_pnl: Option<f64>,
@@ -109,8 +109,8 @@ impl TradePosition {
             cut_loss_price: Arc::new(std::sync::Mutex::new(modified_cut_loss_price)),
             initial_cut_loss_price: modified_cut_loss_price,
             trailing_distance,
-            sold_price: None,
-            sold_amount: None,
+            close_price: None,
+            close_amount: None,
             amount,
             amount_in_anchor_token,
             realized_pnl: None,
@@ -236,8 +236,8 @@ impl TradePosition {
             log::info!("Updated open position :{:?}", self);
         } else {
             self.amount -= amount;
-            self.sold_price = Some(average_price);
-            self.sold_amount = Some(amount);
+            self.close_price = Some(average_price);
+            self.close_amount = Some(amount);
             let pnl = self.pnl(average_price, self.average_open_price, self.amount);
             self.realized_pnl = Some(pnl);
             self.close_time_str = DateTimeUtils::get_current_datetime_string();
@@ -283,7 +283,7 @@ impl TradePosition {
         };
 
         log::info!(
-            "ID: {:<3} Token: {:<6} PNL: {:>6.3}, current: {:>6.3}, buy: {:>6.3}, take_profit: {:>6.3}, cut_loss: {:>6.3}, amount: {:>6.6}",
+            "ID: {:<3} Token: {:<6} PNL: {:>6.3}, current: {:>6.3}, open: {:>6.3}, take_profit: {:>6.3}, cut_loss: {:>6.3}, amount: {:>6.6}",
             id,
             self.token_name,
             self.pnl(current_price, self.average_open_price, self.amount),
