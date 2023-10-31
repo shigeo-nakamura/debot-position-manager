@@ -156,14 +156,16 @@ impl TradePosition {
     pub fn should_close(
         &self,
         sell_price: f64,
-        max_holding_interval: i64,
+        max_holding_interval: Option<i64>,
     ) -> Option<ReasonForClose> {
         if self.should_take_profit(sell_price) {
             return Some(ReasonForClose::TakeProfit);
         }
 
-        if self.should_early_close(sell_price, max_holding_interval) {
-            return Some(ReasonForClose::Other);
+        if let Some(interval) = max_holding_interval {
+            if self.should_early_close(sell_price, interval) {
+                return Some(ReasonForClose::Other);
+            }
         }
 
         self.should_cut_loss(sell_price)
