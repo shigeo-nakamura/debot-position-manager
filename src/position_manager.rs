@@ -139,15 +139,15 @@ impl TradePosition {
         }
     }
 
-    fn should_take_profit_fixed_threshold(&self, sell_price: f64) -> bool {
+    fn should_take_profit_fixed_threshold(&self, close_price: f64) -> bool {
         if self.is_long_position {
-            sell_price >= self.take_profit_price
+            close_price >= self.take_profit_price
         } else {
-            sell_price <= self.take_profit_price
+            close_price <= self.take_profit_price
         }
     }
     // Adjusts cut loss price and returns false. The cut loss price is adjusted
-    // based on the sell price and the trailing distance.
+    // based on the close price and the trailing distance.
     fn should_take_profit_trailing_stop(&self, close_price: f64) -> bool {
         if self.is_long_position {
             let current_distance = close_price - self.average_open_price;
@@ -174,20 +174,20 @@ impl TradePosition {
 
     pub fn should_close(
         &self,
-        sell_price: f64,
+        close_price: f64,
         max_holding_interval: Option<i64>,
     ) -> Option<ReasonForClose> {
-        if self.should_take_profit(sell_price) {
+        if self.should_take_profit(close_price) {
             return Some(ReasonForClose::TakeProfit);
         }
 
         if let Some(interval) = max_holding_interval {
-            if self.should_early_close(sell_price, interval) {
+            if self.should_early_close(close_price, interval) {
                 return Some(ReasonForClose::Other);
             }
         }
 
-        self.should_cut_loss(sell_price)
+        self.should_cut_loss(close_price)
     }
 
     pub fn is_expired(&self, max_holding_interval: i64) -> Option<ReasonForClose> {
@@ -213,12 +213,12 @@ impl TradePosition {
         }
     }
 
-    fn should_take_profit(&self, sell_price: f64) -> bool {
+    fn should_take_profit(&self, close_price: f64) -> bool {
         match self.take_profit_strategy {
             TakeProfitStrategy::FixedThreshold => {
-                self.should_take_profit_fixed_threshold(sell_price)
+                self.should_take_profit_fixed_threshold(close_price)
             }
-            TakeProfitStrategy::TrailingStop => self.should_take_profit_trailing_stop(sell_price),
+            TakeProfitStrategy::TrailingStop => self.should_take_profit_trailing_stop(close_price),
         }
     }
 
