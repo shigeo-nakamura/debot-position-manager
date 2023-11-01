@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 use debot_utils::{DateTimeUtils, HasId, ToDateTimeString};
 
@@ -50,12 +50,16 @@ pub struct TradePosition {
 pub enum State {
     #[default]
     Open,
-    CutLoss,
-    TookProfit,
-    Closed,
-    Liquidated,
-    Expired,
-    Bullish,
+    Closed(String),
+}
+
+impl fmt::Display for State {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            State::Open => write!(f, "Open"),
+            State::Closed(reason) => write!(f, "Closed({})", reason),
+        }
+    }
 }
 
 impl HasId for TradePosition {
@@ -79,9 +83,12 @@ impl TradePosition {
         momentum: Option<f64>,
         predicted_price: Option<f64>,
     ) -> Self {
+        let side = if is_long_position { "Buy" } else { "Sell" };
+        let actual_amount = if is_long_position { amount } else { -amount };
+
         log::debug!(
-            "Created new open position for token: {}, average_open_price: {:6.3}, take_profit_price: {:6.3}, cut_loss_price: {:6.3}, atr:{:?}",
-            token_name, average_open_price, take_profit_price, cut_loss_price, atr
+            "Created a new {} position for token: {}, average_open_price: {:6.3}, take_profit_price: {:6.3}, cut_loss_price: {:6.3}, atr:{:?}",
+            side, token_name, average_open_price, take_profit_price, cut_loss_price, atr
         );
 
         let open_time = chrono::Utc::now().timestamp();
@@ -111,7 +118,7 @@ impl TradePosition {
             trailing_distance,
             close_price: None,
             close_amount: None,
-            amount,
+            amount: actual_amount,
             amount_in_anchor_token,
             realized_pnl: None,
             momentum,
@@ -227,18 +234,23 @@ impl TradePosition {
         None
     }
 
-    fn update(&mut self, average_price: f64, amount: f64) {
+    fn update(&mut self, price: f64, amount: f64, reason: &str) {
+        let prev_amount = self.amount;
+        self.amount += amount;
+
+        if self.amount == 0.0 {
+            self.state = State::Closed(reason.to_owned());
+        }
+
         if self.state == State::Open {
-            self.amount += amount;
-            self.average_open_price = (self.average_open_price * self.amount
-                + average_price * amount)
-                / (self.amount + amount);
+            self.average_open_price = (self.average_open_price * prev_amount.abs()
+                + price * amount.abs())
+                / self.amount.abs();
             log::info!("Updated open position :{:?}", self);
         } else {
-            self.amount -= amount;
-            self.close_price = Some(average_price);
-            self.close_amount = Some(amount);
-            let pnl = self.pnl(average_price, self.average_open_price, self.amount);
+            self.close_price = Some(price);
+            self.close_amount = Some(prev_amount);
+            let pnl = self.pnl(price, prev_amount);
             self.realized_pnl = Some(pnl);
             self.close_time_str = DateTimeUtils::get_current_datetime_string();
 
@@ -246,19 +258,25 @@ impl TradePosition {
         }
     }
 
-    pub fn del(&mut self, sold_price: f64, amount: f64, state: State) {
-        self.state = state;
-        self.update(sold_price, amount);
+    pub fn del(&mut self, close_price: f64, reason: &str) {
+        self.update(close_price, -self.amount, reason)
     }
 
     pub fn add(
         &mut self,
-        average_price: f64,
+        price: f64,
+        is_long_position: bool,
         take_profit_price: f64,
         cut_loss_price: f64,
         amount: f64,
         amount_in_anchor_token: f64,
     ) {
+        let actual_amount = if is_long_position { amount } else { -amount };
+
+        if actual_amount + self.amount == 0.0 {
+            return self.del(price, "reverse trade");
+        }
+
         self.open_time = chrono::Utc::now().timestamp();
         self.open_time_str = self.open_time.to_datetime_string();
 
@@ -266,14 +284,14 @@ impl TradePosition {
 
         self.take_profit_price = (self.take_profit_price * self.amount
             + take_profit_price * amount)
-            / (self.amount + amount);
+            / (self.amount.abs() + amount);
 
         let mut self_cut_loss_price = self.cut_loss_price.lock().unwrap();
-        *self_cut_loss_price =
-            (*self_cut_loss_price * self.amount + cut_loss_price * amount) / (self.amount + amount);
+        *self_cut_loss_price = (*self_cut_loss_price * self.amount.abs() + cut_loss_price * amount)
+            / (self.amount + amount);
         drop(self_cut_loss_price);
 
-        self.update(average_price, amount);
+        self.update(price, actual_amount, "add");
     }
 
     pub fn print_info(&self, current_price: f64) {
@@ -286,7 +304,7 @@ impl TradePosition {
             "ID: {:<3} Token: {:<6} PNL: {:>6.3}, current: {:>6.3}, open: {:>6.3}, take_profit: {:>6.3}, cut_loss: {:>6.3}, amount: {:>6.6}",
             id,
             self.token_name,
-            self.pnl(current_price, self.average_open_price, self.amount),
+            self.pnl(current_price, self.amount),
             current_price,
             self.average_open_price,
             self.take_profit_price,
@@ -295,11 +313,7 @@ impl TradePosition {
         );
     }
 
-    fn pnl(&self, current_price: f64, open_price: f64, amount: f64) -> f64 {
-        (if self.is_long_position {
-            current_price - open_price
-        } else {
-            open_price - current_price
-        }) * amount
+    fn pnl(&self, current_price: f64, amount: f64) -> f64 {
+        (current_price - self.average_open_price) * amount
     }
 }
