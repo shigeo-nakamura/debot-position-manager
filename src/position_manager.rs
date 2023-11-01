@@ -19,6 +19,18 @@ pub enum ReasonForClose {
     Other,
 }
 
+impl fmt::Display for ReasonForClose {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            ReasonForClose::Liquidated => write!(f, "Liquidated"),
+            ReasonForClose::Expired => write!(f, "Expired"),
+            ReasonForClose::TakeProfit => write!(f, "TakeProfit"),
+            ReasonForClose::CutLoss => write!(f, "CutLoss"),
+            ReasonForClose::Other => write!(f, "Other"),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct TradePosition {
     pub id: Option<u32>,
