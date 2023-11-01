@@ -204,13 +204,12 @@ impl TradePosition {
         let holding_interval = current_time - self.open_time;
         if holding_interval > max_holding_interval * 3 / 4 {
             if self.is_long_position {
-                close_price > self.average_open_price
+                return close_price > self.average_open_price;
             } else {
-                close_price < self.average_open_price
+                return close_price < self.average_open_price;
             }
-        } else {
-            return false;
         }
+        false
     }
 
     fn should_take_profit(&self, close_price: f64) -> bool {
