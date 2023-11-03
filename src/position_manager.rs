@@ -52,7 +52,7 @@ pub struct TradePosition {
     close_amount: Option<f64>,
     amount: f64,
     amount_in_anchor_token: f64,
-    realized_pnl: Option<f64>,
+    pnl: Option<f64>,
     momentum: Option<f64>,
     atr: Option<f64>,
     predicted_price: Option<f64>,
@@ -96,11 +96,13 @@ impl TradePosition {
         predicted_price: Option<f64>,
     ) -> Self {
         let side = if is_long_position { "Buy" } else { "Sell" };
-        let actual_amount = if is_long_position { amount } else { -amount };
+        let actual_amount = Self::actual_amount(is_long_position, amount);
 
         log::debug!(
-            "Created a new {} position for token: {}, average_open_price: {:6.3}, take_profit_price: {:6.3}, cut_loss_price: {:6.3}, atr:{:?}",
-            side, token_name, average_open_price, take_profit_price, cut_loss_price, atr
+            "Created a new {} position for token: {}, amount = {}",
+            side,
+            token_name,
+            actual_amount
         );
 
         let open_time = chrono::Utc::now().timestamp();
@@ -132,7 +134,7 @@ impl TradePosition {
             close_amount: None,
             amount: actual_amount,
             amount_in_anchor_token,
-            realized_pnl: None,
+            pnl: None,
             momentum,
             atr,
             predicted_price,
@@ -246,6 +248,7 @@ impl TradePosition {
     }
 
     fn update(&mut self, price: f64, amount: f64, reason: &str) {
+        let pnl = self.pnl(price);
         let prev_amount = self.amount;
         self.amount += amount;
 
@@ -261,8 +264,7 @@ impl TradePosition {
         } else {
             self.close_price = Some(price);
             self.close_amount = Some(prev_amount);
-            let pnl = self.pnl(price, prev_amount);
-            self.realized_pnl = Some(pnl);
+            self.pnl = Some(pnl);
             self.close_time_str = DateTimeUtils::get_current_datetime_string();
 
             log::info!("Cloes the position: {:?}", self);
@@ -282,7 +284,7 @@ impl TradePosition {
         amount: f64,
         amount_in_anchor_token: f64,
     ) {
-        let actual_amount = if is_long_position { amount } else { -amount };
+        let actual_amount = Self::actual_amount(is_long_position, amount);
 
         if actual_amount + self.amount == 0.0 {
             return self.del(price, "reverse trade");
@@ -315,7 +317,7 @@ impl TradePosition {
             "ID: {:<3} Token: {:<6} PNL: {:>6.3}, current: {:>6.3}, open: {:>6.3}, take_profit: {:>6.3}, cut_loss: {:>6.3}, amount: {:>6.6}",
             id,
             self.token_name,
-            self.pnl(current_price, self.amount),
+            self.pnl(current_price,),
             current_price,
             self.average_open_price,
             self.take_profit_price,
@@ -324,8 +326,16 @@ impl TradePosition {
         );
     }
 
-    fn pnl(&self, current_price: f64, amount: f64) -> f64 {
-        (current_price - self.average_open_price) * amount
+    fn actual_amount(is_long_position: bool, amount: f64) -> f64 {
+        if is_long_position {
+            amount
+        } else {
+            -amount
+        }
+    }
+
+    fn pnl(&self, current_price: f64) -> f64 {
+        (current_price - self.average_open_price) * self.amount
     }
 
     pub fn set_id(&mut self, id: Option<u32>) {
