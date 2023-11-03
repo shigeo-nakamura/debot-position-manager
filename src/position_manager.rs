@@ -1,14 +1,6 @@
-use serde::{Deserialize, Serialize};
-use std::{fmt, sync::Arc};
-
 use debot_utils::{DateTimeUtils, HasId, ToDateTimeString};
-
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-pub enum TakeProfitStrategy {
-    #[default]
-    FixedThreshold,
-    TrailingStop,
-}
+use serde::{Deserialize, Serialize};
+use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReasonForClose {
@@ -34,7 +26,6 @@ impl fmt::Display for ReasonForClose {
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct TradePosition {
     id: Option<u32>,
-    take_profit_strategy: TakeProfitStrategy,
     state: State,
     token_name: String,
     fund_name: String,
@@ -44,10 +35,7 @@ pub struct TradePosition {
     average_open_price: f64,
     is_long_position: bool,
     take_profit_price: f64,
-    #[serde(skip)]
-    cut_loss_price: Arc<std::sync::Mutex<f64>>,
-    initial_cut_loss_price: f64,
-    trailing_distance: f64,
+    cut_loss_price: f64,
     close_price: Option<f64>,
     close_amount: Option<f64>,
     amount: f64,
@@ -84,7 +72,6 @@ impl TradePosition {
     pub fn new(
         token_name: &str,
         fund_name: &str,
-        take_profit_strategy: TakeProfitStrategy,
         average_open_price: f64,
         is_long_position: bool,
         take_profit_price: f64,
@@ -107,17 +94,8 @@ impl TradePosition {
 
         let open_time = chrono::Utc::now().timestamp();
 
-        let modified_cut_loss_price = cut_loss_price;
-
-        let trailing_distance = if is_long_position {
-            take_profit_price - average_open_price
-        } else {
-            average_open_price - take_profit_price
-        };
-
         Self {
             id: None,
-            take_profit_strategy,
             state: State::Open,
             token_name: token_name.to_owned(),
             fund_name: fund_name.to_owned(),
@@ -127,9 +105,7 @@ impl TradePosition {
             average_open_price,
             is_long_position,
             take_profit_price,
-            cut_loss_price: Arc::new(std::sync::Mutex::new(modified_cut_loss_price)),
-            initial_cut_loss_price: modified_cut_loss_price,
-            trailing_distance,
+            cut_loss_price,
             close_price: None,
             close_amount: None,
             amount: actual_amount,
@@ -141,55 +117,32 @@ impl TradePosition {
         }
     }
 
-    fn should_take_profit_fixed_threshold(&self, close_price: f64) -> bool {
+    fn should_take_profit(&self, close_price: f64) -> bool {
         if self.is_long_position {
             close_price >= self.take_profit_price
         } else {
             close_price <= self.take_profit_price
         }
     }
-    // Adjusts cut loss price and returns false. The cut loss price is adjusted
-    // based on the close price and the trailing distance.
-    fn should_take_profit_trailing_stop(&self, close_price: f64) -> bool {
-        if self.is_long_position {
-            let current_distance = close_price - self.average_open_price;
-            if current_distance > self.trailing_distance {
-                let cut_loss_price = close_price - self.trailing_distance;
-                let mut cut_loss_price_self = self.cut_loss_price.lock().unwrap();
-                if cut_loss_price > *cut_loss_price_self {
-                    *cut_loss_price_self = cut_loss_price;
-                }
-            }
-        } else {
-            let current_distance = self.average_open_price - close_price;
-            if current_distance > self.trailing_distance {
-                let cut_loss_price = close_price + self.trailing_distance;
-                let mut cut_loss_price_self = self.cut_loss_price.lock().unwrap();
-                if cut_loss_price < *cut_loss_price_self {
-                    *cut_loss_price_self = cut_loss_price;
-                }
-            }
-        }
 
-        false
+    fn should_cut_loss(&self, close_price: f64) -> bool {
+        if self.is_long_position {
+            close_price <= self.cut_loss_price
+        } else {
+            close_price >= self.cut_loss_price
+        }
     }
 
-    pub fn should_close(
-        &self,
-        close_price: f64,
-        max_holding_interval: Option<i64>,
-    ) -> Option<ReasonForClose> {
+    pub fn should_close(&self, close_price: f64) -> Option<ReasonForClose> {
         if self.should_take_profit(close_price) {
             return Some(ReasonForClose::TakeProfit);
         }
 
-        if let Some(interval) = max_holding_interval {
-            if self.should_early_close(close_price, interval) {
-                return Some(ReasonForClose::Other);
-            }
+        if self.should_cut_loss(close_price) {
+            Some(ReasonForClose::CutLoss)
+        } else {
+            None
         }
-
-        self.should_cut_loss(close_price)
     }
 
     pub fn is_expired(&self, max_holding_interval: i64) -> Option<ReasonForClose> {
@@ -198,52 +151,6 @@ impl TradePosition {
         if holding_interval > max_holding_interval {
             return Some(ReasonForClose::Expired);
         }
-        None
-    }
-
-    fn should_early_close(&self, close_price: f64, max_holding_interval: i64) -> bool {
-        let current_time = chrono::Utc::now().timestamp();
-        let holding_interval = current_time - self.open_time;
-        if holding_interval > max_holding_interval * 3 / 4 {
-            if self.is_long_position {
-                return close_price > self.average_open_price;
-            } else {
-                return close_price < self.average_open_price;
-            }
-        }
-        false
-    }
-
-    fn should_take_profit(&self, close_price: f64) -> bool {
-        match self.take_profit_strategy {
-            TakeProfitStrategy::FixedThreshold => {
-                self.should_take_profit_fixed_threshold(close_price)
-            }
-            TakeProfitStrategy::TrailingStop => self.should_take_profit_trailing_stop(close_price),
-        }
-    }
-
-    fn should_cut_loss(&self, close_price: f64) -> Option<ReasonForClose> {
-        let cut_loss_price = *self.cut_loss_price.lock().unwrap();
-
-        if self.is_long_position {
-            if close_price < cut_loss_price {
-                if close_price > self.average_open_price {
-                    return Some(ReasonForClose::TakeProfit);
-                } else {
-                    return Some(ReasonForClose::CutLoss);
-                }
-            }
-        } else {
-            if close_price > cut_loss_price {
-                if close_price < self.average_open_price {
-                    return Some(ReasonForClose::TakeProfit);
-                } else {
-                    return Some(ReasonForClose::CutLoss);
-                }
-            }
-        }
-
         None
     }
 
@@ -295,14 +202,12 @@ impl TradePosition {
 
         self.amount_in_anchor_token += amount_in_anchor_token;
 
-        self.take_profit_price = (self.take_profit_price * self.amount
+        self.take_profit_price = (self.take_profit_price * self.amount.abs()
             + take_profit_price * amount)
             / (self.amount.abs() + amount);
 
-        let mut self_cut_loss_price = self.cut_loss_price.lock().unwrap();
-        *self_cut_loss_price = (*self_cut_loss_price * self.amount.abs() + cut_loss_price * amount)
-            / (self.amount + amount);
-        drop(self_cut_loss_price);
+        self.cut_loss_price = (self.cut_loss_price * self.amount.abs() + cut_loss_price * amount)
+            / (self.amount.abs() + amount);
 
         self.update(price, actual_amount, "add");
     }
@@ -313,7 +218,7 @@ impl TradePosition {
             None => 0,
         };
 
-        log::info!(
+        log::debug!(
             "ID: {:<3} Token: {:<6} PNL: {:>6.3}, current: {:>6.3}, open: {:>6.3}, take_profit: {:>6.3}, cut_loss: {:>6.3}, amount: {:>6.6}",
             id,
             self.token_name,
@@ -321,7 +226,7 @@ impl TradePosition {
             current_price,
             self.average_open_price,
             self.take_profit_price,
-            *self.cut_loss_price.lock().unwrap(),
+            self.cut_loss_price,
             self.amount
         );
     }
@@ -370,15 +275,11 @@ impl TradePosition {
         self.is_long_position
     }
 
-    pub fn initial_cut_loss_price(&self) -> f64 {
-        self.initial_cut_loss_price
+    pub fn cut_loss_price(&self) -> f64 {
+        self.cut_loss_price
     }
 
     pub fn amount_in_anchor_token(&self) -> f64 {
         self.amount_in_anchor_token
-    }
-
-    pub fn reset_cut_loss_price(&mut self) {
-        self.cut_loss_price = Arc::new(std::sync::Mutex::new(self.initial_cut_loss_price));
     }
 }
