@@ -328,15 +328,23 @@ impl TradePosition {
         (current_price - self.average_open_price) * amount
     }
 
-    pub fn get_id(&self) -> Option<u32> {
+    pub fn id(&self) -> Option<u32> {
         self.id
     }
 
-    pub fn get_token_name(&self) -> &str {
+    pub fn state(&self) -> &State {
+        &self.state
+    }
+
+    pub fn token_name(&self) -> &str {
         &self.token_name
     }
 
-    pub fn get_amount(&self) -> f64 {
+    pub fn fund_name(&self) -> &str {
+        &self.fund_name
+    }
+
+    pub fn amount(&self) -> f64 {
         if self.is_long_position {
             self.amount
         } else {
@@ -344,7 +352,15 @@ impl TradePosition {
         }
     }
 
-    pub fn get_amount_in_anchor_token(&self) -> f64 {
+    pub fn initial_cut_loss_price(&self) -> f64 {
+        self.initial_cut_loss_price
+    }
+
+    pub fn amount_in_anchor_token(&self) -> f64 {
         self.amount_in_anchor_token
+    }
+
+    pub fn reset_cut_loss_price(&mut self) {
+        self.cut_loss_price = Arc::new(std::sync::Mutex::new(self.initial_cut_loss_price));
     }
 }
