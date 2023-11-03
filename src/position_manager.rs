@@ -58,7 +58,7 @@ pub struct TradePosition {
     predicted_price: Option<f64>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
 pub enum State {
     #[default]
     Open,
@@ -326,6 +326,10 @@ impl TradePosition {
 
     fn pnl(&self, current_price: f64, amount: f64) -> f64 {
         (current_price - self.average_open_price) * amount
+    }
+
+    pub fn set_id(&mut self, id: u32) {
+        self.id = Some(id);
     }
 
     pub fn id(&self) -> Option<u32> {
