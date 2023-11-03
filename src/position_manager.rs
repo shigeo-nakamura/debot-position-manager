@@ -356,6 +356,10 @@ impl TradePosition {
         }
     }
 
+    pub fn is_long_position(&self) -> bool {
+        self.is_long_position
+    }
+
     pub fn initial_cut_loss_price(&self) -> f64 {
         self.initial_cut_loss_price
     }
