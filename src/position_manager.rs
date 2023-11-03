@@ -33,29 +33,29 @@ impl fmt::Display for ReasonForClose {
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct TradePosition {
-    pub id: Option<u32>,
-    pub take_profit_strategy: TakeProfitStrategy,
-    pub state: State,
-    pub token_name: String,
-    pub fund_name: String,
-    pub open_time: i64,
-    pub open_time_str: String,
-    pub close_time_str: String,
-    pub average_open_price: f64,
-    pub is_long_position: bool,
-    pub take_profit_price: f64,
+    id: Option<u32>,
+    take_profit_strategy: TakeProfitStrategy,
+    state: State,
+    token_name: String,
+    fund_name: String,
+    open_time: i64,
+    open_time_str: String,
+    close_time_str: String,
+    average_open_price: f64,
+    is_long_position: bool,
+    take_profit_price: f64,
     #[serde(skip)]
-    pub cut_loss_price: Arc<std::sync::Mutex<f64>>,
-    pub initial_cut_loss_price: f64,
-    pub trailing_distance: f64,
-    pub close_price: Option<f64>,
-    pub close_amount: Option<f64>,
-    pub amount: f64,
-    pub amount_in_anchor_token: f64,
-    pub realized_pnl: Option<f64>,
-    pub momentum: Option<f64>,
-    pub atr: Option<f64>,
-    pub predicted_price: Option<f64>,
+    cut_loss_price: Arc<std::sync::Mutex<f64>>,
+    initial_cut_loss_price: f64,
+    trailing_distance: f64,
+    close_price: Option<f64>,
+    close_amount: Option<f64>,
+    amount: f64,
+    amount_in_anchor_token: f64,
+    realized_pnl: Option<f64>,
+    momentum: Option<f64>,
+    atr: Option<f64>,
+    predicted_price: Option<f64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
@@ -326,5 +326,25 @@ impl TradePosition {
 
     fn pnl(&self, current_price: f64, amount: f64) -> f64 {
         (current_price - self.average_open_price) * amount
+    }
+
+    pub fn get_id(&self) -> Option<u32> {
+        self.id
+    }
+
+    pub fn get_token_name(&self) -> &str {
+        &self.token_name
+    }
+
+    pub fn get_amount(&self) -> f64 {
+        if self.is_long_position {
+            self.amount
+        } else {
+            self.amount * -1.0
+        }
+    }
+
+    pub fn get_amount_in_anchor_token(&self) -> f64 {
+        self.amount_in_anchor_token
     }
 }
