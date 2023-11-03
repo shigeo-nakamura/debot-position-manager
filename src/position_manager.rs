@@ -328,8 +328,8 @@ impl TradePosition {
         (current_price - self.average_open_price) * amount
     }
 
-    pub fn set_id(&mut self, id: u32) {
-        self.id = Some(id);
+    pub fn set_id(&mut self, id: Option<u32>) {
+        self.id = id;
     }
 
     pub fn id(&self) -> Option<u32> {
