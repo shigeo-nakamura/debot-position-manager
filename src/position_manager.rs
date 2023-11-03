@@ -334,7 +334,7 @@ impl TradePosition {
         }
     }
 
-    fn pnl(&self, current_price: f64) -> f64 {
+    pub fn pnl(&self, current_price: f64) -> f64 {
         (current_price - self.average_open_price) * self.amount
     }
 
