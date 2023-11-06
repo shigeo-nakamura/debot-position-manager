@@ -85,8 +85,8 @@ impl TradePosition {
         let side = if is_long_position { "Buy" } else { "Sell" };
         let actual_amount = Self::actual_amount(is_long_position, amount);
 
-        log::debug!(
-            "Created a new {} position for token: {}, amount = {}",
+        log::info!(
+            "++ Open a new {} position for token: {}, amount = {}",
             side,
             token_name,
             actual_amount
@@ -174,7 +174,7 @@ impl TradePosition {
             self.pnl = Some(pnl);
             self.close_time_str = DateTimeUtils::get_current_datetime_string();
 
-            log::info!("Cloes the position: {:?}", self);
+            log::info!("-- Cloes the position: {:?}", self);
         }
     }
 
