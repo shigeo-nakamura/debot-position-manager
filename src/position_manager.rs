@@ -154,8 +154,12 @@ impl TradePosition {
         None
     }
 
-    fn update(&mut self, price: f64, amount: f64, reason: &str) {
-        let pnl = self.pnl(price);
+    fn update(&mut self, price: Option<f64>, amount: f64, reason: &str) {
+        let pnl = match price {
+            Some(price) => Some(self.pnl(price)),
+            None => None,
+        };
+
         let prev_amount = self.amount;
         self.amount += amount;
 
@@ -165,20 +169,20 @@ impl TradePosition {
 
         if self.state == State::Open {
             self.average_open_price = (self.average_open_price * prev_amount.abs()
-                + price * amount.abs())
+                + price.unwrap() * amount.abs())
                 / self.amount.abs();
             log::info!("Updated open position :{:?}", self);
         } else {
-            self.close_price = Some(price);
+            self.close_price = price;
             self.close_amount = Some(prev_amount);
-            self.pnl = Some(pnl);
+            self.pnl = pnl;
             self.close_time_str = DateTimeUtils::get_current_datetime_string();
 
             log::info!("-- Cloes the position: {:?}", self);
         }
     }
 
-    pub fn del(&mut self, close_price: f64, reason: &str) {
+    pub fn del(&mut self, close_price: Option<f64>, reason: &str) {
         self.update(close_price, -self.amount, reason)
     }
 
@@ -194,7 +198,7 @@ impl TradePosition {
         let actual_amount = Self::actual_amount(is_long_position, amount);
 
         if actual_amount + self.amount == 0.0 {
-            return self.del(price, "reverse trade");
+            return self.del(Some(price), "reverse trade");
         }
 
         self.open_time = chrono::Utc::now().timestamp();
@@ -209,7 +213,7 @@ impl TradePosition {
         self.cut_loss_price = (self.cut_loss_price * self.amount.abs() + cut_loss_price * amount)
             / (self.amount.abs() + amount);
 
-        self.update(price, actual_amount, "add");
+        self.update(Some(price), actual_amount, "add");
     }
 
     pub fn print_info(&self, current_price: f64) {
