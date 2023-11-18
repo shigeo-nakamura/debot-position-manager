@@ -41,6 +41,7 @@ pub struct TradePosition {
     amount: f64,
     amount_in_anchor_token: f64,
     pnl: Option<f64>,
+    fee: f64,
     momentum: Option<f64>,
     atr: Option<f64>,
     predicted_price: Option<f64>,
@@ -111,6 +112,7 @@ impl TradePosition {
             amount: actual_amount,
             amount_in_anchor_token,
             pnl: None,
+            fee: 0.0,
             momentum,
             atr,
             predicted_price,
@@ -154,7 +156,7 @@ impl TradePosition {
         None
     }
 
-    fn update(&mut self, price: Option<f64>, amount: f64, reason: &str) {
+    fn update(&mut self, price: Option<f64>, amount: f64, fee: f64, reason: &str) {
         let pnl = match price {
             Some(price) => Some(self.pnl(price)),
             None => None,
@@ -166,6 +168,8 @@ impl TradePosition {
         if self.amount == 0.0 {
             self.state = State::Closed(reason.to_owned());
         }
+
+        self.fee += fee;
 
         if self.state == State::Open {
             self.average_open_price = (self.average_open_price * prev_amount.abs()
@@ -182,8 +186,8 @@ impl TradePosition {
         }
     }
 
-    pub fn del(&mut self, close_price: Option<f64>, reason: &str) {
-        self.update(close_price, -self.amount, reason)
+    pub fn del(&mut self, close_price: Option<f64>, fee: f64, reason: &str) {
+        self.update(close_price, -self.amount, fee, reason)
     }
 
     pub fn add(
@@ -194,11 +198,12 @@ impl TradePosition {
         cut_loss_price: f64,
         amount: f64,
         amount_in_anchor_token: f64,
+        fee: f64,
     ) {
         let actual_amount = Self::actual_amount(is_long_position, amount);
 
         if actual_amount + self.amount == 0.0 {
-            return self.del(Some(price), "reverse trade");
+            return self.del(Some(price), fee, "reverse trade");
         }
 
         self.open_time = chrono::Utc::now().timestamp();
@@ -213,7 +218,7 @@ impl TradePosition {
         self.cut_loss_price = (self.cut_loss_price * self.amount.abs() + cut_loss_price * amount)
             / (self.amount.abs() + amount);
 
-        self.update(Some(price), actual_amount, "add");
+        self.update(Some(price), actual_amount, fee, "add");
     }
 
     pub fn print_info(&self, current_price: f64) {
