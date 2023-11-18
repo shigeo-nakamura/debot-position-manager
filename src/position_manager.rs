@@ -159,7 +159,7 @@ impl TradePosition {
 
     fn update(&mut self, price: Option<f64>, amount: f64, fee: f64, reason: &str) {
         let pnl = match price {
-            Some(price) => Some(self.pnl(price)),
+            Some(price) => Some(self.pnl(price) - fee),
             None => None,
         };
 
