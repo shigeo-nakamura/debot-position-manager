@@ -42,7 +42,6 @@ pub struct TradePosition {
     amount_in_anchor_token: f64,
     pnl: Option<f64>,
     fee: f64,
-    momentum: Option<f64>,
     atr: Option<f64>,
     predicted_price: Option<f64>,
 }
@@ -81,7 +80,6 @@ impl TradePosition {
         amount_in_anchor_token: f64,
         fee: f64,
         atr: Option<f64>,
-        momentum: Option<f64>,
         predicted_price: Option<f64>,
     ) -> Self {
         let side = if is_long_position { "Buy" } else { "Sell" };
@@ -114,7 +112,6 @@ impl TradePosition {
             amount_in_anchor_token,
             pnl: None,
             fee,
-            momentum,
             atr,
             predicted_price,
         }
