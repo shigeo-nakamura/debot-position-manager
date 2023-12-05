@@ -203,6 +203,10 @@ impl TradePosition {
         self.id
     }
 
+    pub fn order_id(&self) -> &str {
+        &self.order_id
+    }
+
     pub fn state(&self) -> &State {
         &self.state
     }
