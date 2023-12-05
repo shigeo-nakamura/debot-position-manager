@@ -56,6 +56,7 @@ pub struct TradePosition {
     close_time_str: String,
     average_open_price: f64,
     is_long_position: bool,
+    predicted_price: f64,
     take_profit_price: f64,
     cut_loss_price: f64,
     close_price: Option<f64>,
@@ -80,8 +81,7 @@ impl TradePosition {
         token_name: &str,
         fund_name: &str,
         is_long_position: bool,
-        take_profit_price: f64,
-        cut_loss_price: f64,
+        predicted_price: f64,
         atr: Option<f64>,
     ) -> Self {
         Self {
@@ -96,8 +96,9 @@ impl TradePosition {
             close_time_str: String::new(),
             average_open_price: 0.0,
             is_long_position,
-            take_profit_price,
-            cut_loss_price,
+            predicted_price,
+            take_profit_price: 0.0,
+            cut_loss_price: 0.0,
             close_price: None,
             close_amount: None,
             amount: 0.0,
@@ -114,6 +115,8 @@ impl TradePosition {
         amount: f64,
         amount_in_anchor_token: f64,
         fee: f64,
+        take_profit_price: f64,
+        cut_loss_price: f64,
     ) {
         if self.state != State::OpenPending {
             log::error!("Invalid state: {}", self.state);
@@ -136,6 +139,8 @@ impl TradePosition {
         self.amount = actual_amount;
         self.amount_in_anchor_token = amount_in_anchor_token;
         self.fee = fee;
+        self.take_profit_price = take_profit_price;
+        self.cut_loss_price = cut_loss_price;
         self.state = State::Open;
     }
 
@@ -148,16 +153,19 @@ impl TradePosition {
         self.state = State::ClosePending(reason.to_owned());
     }
 
-    pub fn delete(&mut self, close_price: Option<f64>, fee: f64) {
-        let reason = match self.state.clone() {
-            State::ClosePending(reason) => reason,
-            _ => {
-                log::error!("Invalid state: {}", self.state);
-                return;
-            }
-        };
-
-        self.update(close_price, -self.amount, fee, &reason);
+    pub fn delete(&mut self, close_price: Option<f64>, fee: f64, do_liquidate: bool) {
+        if do_liquidate {
+            self.update(close_price, -self.amount, fee, "Liquidated");
+        } else {
+            let reason = match self.state.clone() {
+                State::ClosePending(reason) => reason,
+                _ => {
+                    log::error!("Invalid state: {}", self.state);
+                    return;
+                }
+            };
+            self.update(close_price, -self.amount, fee, &reason);
+        }
     }
 
     pub fn should_cancel_pending(&self, max_pending_duration: i64) -> bool {
@@ -217,6 +225,10 @@ impl TradePosition {
 
     pub fn is_long_position(&self) -> bool {
         self.is_long_position
+    }
+
+    pub fn predicted_price(&self) -> f64 {
+        self.predicted_price
     }
 
     pub fn cut_loss_price(&self) -> f64 {
