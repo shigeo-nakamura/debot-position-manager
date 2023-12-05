@@ -23,6 +23,25 @@ impl fmt::Display for ReasonForClose {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub enum State {
+    Open,
+    OpenPending,
+    ClosePending(String),
+    Closed(String),
+}
+
+impl fmt::Display for State {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            State::Open => write!(f, "Open"),
+            State::OpenPending => write!(f, "OpenPending"),
+            State::ClosePending(reason) => write!(f, "ClosePending({})", reason),
+            State::Closed(reason) => write!(f, "Closed({})", reason),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TradePosition {
     id: Option<u32>,
@@ -45,25 +64,6 @@ pub struct TradePosition {
     pnl: Option<f64>,
     fee: f64,
     atr: Option<f64>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub enum State {
-    Open,
-    OpenPending,
-    ClosePending,
-    Closed(String),
-}
-
-impl fmt::Display for State {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            State::Open => write!(f, "Open"),
-            State::Closed(reason) => write!(f, "Closed({})", reason),
-            State::OpenPending => write!(f, "OpenPending"),
-            State::ClosePending => write!(f, "ClosePending"),
-        }
-    }
 }
 
 impl HasId for TradePosition {
@@ -114,6 +114,11 @@ impl TradePosition {
         amount_in_anchor_token: f64,
         fee: f64,
     ) {
+        if self.state != State::OpenPending {
+            log::error!("Invalid state: {}", self.state);
+            return;
+        }
+
         let actual_amount = Self::actual_amount(self.is_long_position, amount);
         let side = if self.is_long_position { "Buy" } else { "Sell" };
 
@@ -131,6 +136,27 @@ impl TradePosition {
         self.amount_in_anchor_token = amount_in_anchor_token;
         self.fee = fee;
         self.state = State::Open;
+    }
+
+    pub fn close(&mut self, reason: &str) {
+        if self.state != State::Open {
+            log::error!("Invalid state: {}", self.state);
+            return;
+        }
+
+        self.state = State::ClosePending(reason.to_owned());
+    }
+
+    pub fn delete(&mut self, close_price: Option<f64>, fee: f64) {
+        let reason = match self.state.clone() {
+            State::ClosePending(reason) => reason,
+            _ => {
+                log::error!("Invalid state: {}", self.state);
+                return;
+            }
+        };
+
+        self.update(close_price, -self.amount, fee, &reason);
     }
 
     pub fn should_cancel_pending(&self, max_pending_duration: i64) -> bool {
@@ -158,60 +184,6 @@ impl TradePosition {
             return Some(ReasonForClose::Expired);
         }
         None
-    }
-
-    pub fn del(&mut self, close_price: Option<f64>, fee: f64, reason: &str) {
-        self.update(close_price, -self.amount, fee, reason)
-    }
-
-    pub fn add(
-        &mut self,
-        price: f64,
-        is_long_position: bool,
-        take_profit_price: f64,
-        cut_loss_price: f64,
-        amount: f64,
-        amount_in_anchor_token: f64,
-        fee: f64,
-    ) {
-        let actual_amount = Self::actual_amount(is_long_position, amount);
-
-        if actual_amount + self.amount == 0.0 {
-            return self.del(Some(price), fee, "reverse trade");
-        }
-
-        self.open_time = chrono::Utc::now().timestamp();
-        self.open_time_str = self.open_time.to_datetime_string();
-
-        self.amount_in_anchor_token += amount_in_anchor_token;
-
-        self.take_profit_price = (self.take_profit_price * self.amount.abs()
-            + take_profit_price * amount)
-            / (self.amount.abs() + amount);
-
-        self.cut_loss_price = (self.cut_loss_price * self.amount.abs() + cut_loss_price * amount)
-            / (self.amount.abs() + amount);
-
-        self.update(Some(price), actual_amount, fee, "add");
-    }
-
-    pub fn print_info(&self, current_price: f64) {
-        let id = match self.id {
-            Some(id) => id,
-            None => 0,
-        };
-
-        log::debug!(
-            "ID: {:<3} Token: {:<6} PNL: {:>6.3}, current: {:>6.3}, open: {:>6.3}, take_profit: {:>6.3}, cut_loss: {:>6.3}, amount: {:>6.6}",
-            id,
-            self.token_name,
-            self.pnl(current_price,),
-            current_price,
-            self.average_open_price,
-            self.take_profit_price,
-            self.cut_loss_price,
-            self.amount
-        );
     }
 
     pub fn pnl(&self, current_price: f64) -> f64 {
@@ -306,5 +278,24 @@ impl TradePosition {
 
             log::info!("-- Cloes the position: {:?}", self);
         }
+    }
+
+    pub fn print_info(&self, current_price: f64) {
+        let id = match self.id {
+            Some(id) => id,
+            None => 0,
+        };
+
+        log::debug!(
+            "ID: {:<3} Token: {:<6} PNL: {:>6.3}, current: {:>6.3}, open: {:>6.3}, take_profit: {:>6.3}, cut_loss: {:>6.3}, amount: {:>6.6}",
+            id,
+            self.token_name,
+            self.pnl(current_price,),
+            current_price,
+            self.average_open_price,
+            self.take_profit_price,
+            self.cut_loss_price,
+            self.amount
+        );
     }
 }
