@@ -23,8 +23,9 @@ impl fmt::Display for ReasonForClose {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
 pub enum State {
+    #[default]
     Open,
     OpenPending,
     ClosePending(String),
@@ -42,7 +43,7 @@ impl fmt::Display for State {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct TradePosition {
     id: Option<u32>,
     order_id: String,
