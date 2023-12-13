@@ -119,7 +119,7 @@ impl TradePosition {
         cut_loss_price: f64,
     ) {
         if self.state != State::OpenPending {
-            log::error!("Invalid state: {}", self.state);
+            log::error!("open: Invalid state: {}", self.state);
             return;
         }
 
@@ -146,7 +146,7 @@ impl TradePosition {
 
     pub fn close(&mut self, reason: &str) {
         if self.state != State::Open {
-            log::error!("Invalid state: {}", self.state);
+            log::error!("close: Invalid state: {}", self.state);
             return;
         }
 
@@ -160,7 +160,7 @@ impl TradePosition {
             let reason = match self.state.clone() {
                 State::ClosePending(reason) => reason,
                 _ => {
-                    log::error!("Invalid state: {}", self.state);
+                    log::error!("delete: Invalid state: {}", self.state);
                     return;
                 }
             };
