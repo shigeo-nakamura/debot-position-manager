@@ -153,9 +153,19 @@ impl TradePosition {
         self.state = State::ClosePending(reason.to_owned());
     }
 
-    pub fn delete(&mut self, close_price: Option<f64>, fee: f64, do_liquidate: bool) {
+    pub fn delete(
+        &mut self,
+        close_price: Option<f64>,
+        fee: f64,
+        do_liquidate: bool,
+        liquidated_reason: Option<String>,
+    ) {
         if do_liquidate {
-            self.update(close_price, -self.amount, fee, "Liquidated");
+            let reason = match liquidated_reason {
+                Some(r) => format!("Liquidated, {}", r),
+                None => String::from("Liquidated"),
+            };
+            self.update(close_price, -self.amount, fee, &reason);
         } else {
             let reason = match self.state.clone() {
                 State::ClosePending(reason) => reason,
