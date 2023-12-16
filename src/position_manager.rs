@@ -144,12 +144,13 @@ impl TradePosition {
         self.state = State::Open;
     }
 
-    pub fn close(&mut self, reason: &str) {
+    pub fn close(&mut self, order_id: &str, reason: &str) {
         if self.state != State::Open {
             log::error!("close: Invalid state: {}", self.state);
             return;
         }
 
+        self.order_id = order_id.to_owned();
         self.state = State::ClosePending(reason.to_owned());
     }
 
