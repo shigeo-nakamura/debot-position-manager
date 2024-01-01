@@ -234,7 +234,7 @@ impl TradePosition {
         if self.is_long_position {
             self.amount
         } else {
-            self.amount * -1.0
+            -self.amount
         }
     }
 
