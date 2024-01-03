@@ -117,10 +117,10 @@ impl TradePosition {
         fee: f64,
         take_profit_price: f64,
         cut_loss_price: f64,
-    ) {
+    ) -> Result<(), ()> {
         if self.state != State::OpenPending {
             log::error!("open: Invalid state: {}", self.state);
-            return;
+            return Err(());
         }
 
         let actual_amount = Self::actual_amount(self.is_long_position, amount);
@@ -142,16 +142,20 @@ impl TradePosition {
         self.take_profit_price = take_profit_price;
         self.cut_loss_price = cut_loss_price;
         self.state = State::Open;
+
+        return Ok(());
     }
 
-    pub fn close(&mut self, order_id: &str, reason: &str) {
+    pub fn close(&mut self, order_id: &str, reason: &str) -> Result<(), ()> {
         if self.state != State::Open {
             log::error!("close: Invalid state: {}", self.state);
-            return;
+            return Err(());
         }
 
         self.order_id = order_id.to_owned();
         self.state = State::ClosePending(reason.to_owned());
+
+        return Ok(());
     }
 
     pub fn delete(
