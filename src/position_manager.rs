@@ -26,19 +26,21 @@ impl fmt::Display for ReasonForClose {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
 pub enum State {
     #[default]
+    Opening,
     Open,
-    OpenPending,
-    ClosePending(String),
+    Closing(String),
     Closed(String),
+    Canceled,
 }
 
 impl fmt::Display for State {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            State::Opening => write!(f, "Opening"),
             State::Open => write!(f, "Open"),
-            State::OpenPending => write!(f, "OpenPending"),
-            State::ClosePending(reason) => write!(f, "ClosePending({})", reason),
+            State::Closing(reason) => write!(f, "Closing({})", reason),
             State::Closed(reason) => write!(f, "Closed({})", reason),
+            State::Canceled => write!(f, "Canceled"),
         }
     }
 }
@@ -50,7 +52,8 @@ pub struct TradePosition {
     state: State,
     token_name: String,
     fund_name: String,
-    pend_time: i64,
+    ordered_time: i64,
+    order_effective_duration: i64,
     open_time: i64,
     open_time_str: String,
     close_time_str: String,
@@ -78,6 +81,7 @@ impl TradePosition {
     pub fn new(
         id: u32,
         order_id: &str,
+        order_effective_duration: i64,
         token_name: &str,
         fund_name: &str,
         is_long_position: bool,
@@ -87,10 +91,11 @@ impl TradePosition {
         Self {
             id: Some(id),
             order_id: order_id.to_owned(),
-            state: State::OpenPending,
+            order_effective_duration,
+            state: State::Opening,
             token_name: token_name.to_owned(),
             fund_name: fund_name.to_owned(),
-            pend_time: chrono::Utc::now().timestamp(),
+            ordered_time: chrono::Utc::now().timestamp(),
             open_time: 0,
             open_time_str: String::new(),
             close_time_str: String::new(),
@@ -118,7 +123,7 @@ impl TradePosition {
         take_profit_price: f64,
         cut_loss_price: f64,
     ) -> Result<(), ()> {
-        if self.state != State::OpenPending {
+        if self.state != State::Opening {
             log::error!("open: Invalid state: {}", self.state);
             return Err(());
         }
@@ -153,7 +158,8 @@ impl TradePosition {
         }
 
         self.order_id = order_id.to_owned();
-        self.state = State::ClosePending(reason.to_owned());
+        self.ordered_time = chrono::Utc::now().timestamp();
+        self.state = State::Closing(reason.to_owned());
 
         return Ok(());
     }
@@ -173,7 +179,7 @@ impl TradePosition {
             self.update(close_price, -self.amount, fee, &reason);
         } else {
             let reason = match self.state.clone() {
-                State::ClosePending(reason) => reason,
+                State::Closing(reason) => reason,
                 _ => {
                     log::error!("delete: Invalid state: {}", self.state);
                     return;
@@ -183,10 +189,31 @@ impl TradePosition {
         }
     }
 
-    pub fn should_cancel_pending(&self, max_pending_duration: i64) -> bool {
-        let current_time = chrono::Utc::now().timestamp();
-        let pending_duration = current_time - self.pend_time;
-        pending_duration > max_pending_duration
+    pub fn cancel(&mut self) {
+        match self.state {
+            State::Opening => {
+                self.state = State::Canceled;
+                log::info!("-- Cancled the position: {:?}", self);
+            }
+            State::Closing(_) => {
+                self.state = State::Open;
+                log::info!("-- Cancled the position: {:?}", self);
+            }
+            _ => {
+                log::error!("cancel: Invalid state: {}", self.state);
+            }
+        }
+    }
+
+    pub fn should_cancel_order(&self) -> bool {
+        match self.state {
+            State::Opening | State::Closing(_) => {
+                let current_time = chrono::Utc::now().timestamp();
+                let ordering_duration = current_time - self.ordered_time;
+                ordering_duration > self.order_effective_duration
+            }
+            _ => false,
+        }
     }
 
     pub fn should_close(&self, close_price: f64) -> Option<ReasonForClose> {
