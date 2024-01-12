@@ -49,6 +49,7 @@ impl fmt::Display for State {
 pub struct TradePosition {
     id: Option<u32>,
     order_id: String,
+    ordered_price: f64,
     state: State,
     token_name: String,
     fund_name: String,
@@ -81,6 +82,7 @@ impl TradePosition {
     pub fn new(
         id: u32,
         order_id: &str,
+        ordered_price: f64,
         order_effective_duration: i64,
         token_name: &str,
         fund_name: &str,
@@ -91,6 +93,7 @@ impl TradePosition {
         Self {
             id: Some(id),
             order_id: order_id.to_owned(),
+            ordered_price,
             order_effective_duration,
             state: State::Opening,
             token_name: token_name.to_owned(),
@@ -249,6 +252,14 @@ impl TradePosition {
         &self.order_id
     }
 
+    pub fn ordered_price(&self) -> f64 {
+        self.ordered_price
+    }
+
+    pub fn predicted_price(&self) -> f64 {
+        self.predicted_price
+    }
+
     pub fn state(&self) -> &State {
         &self.state
     }
@@ -271,10 +282,6 @@ impl TradePosition {
 
     pub fn is_long_position(&self) -> bool {
         self.is_long_position
-    }
-
-    pub fn predicted_price(&self) -> f64 {
-        self.predicted_price
     }
 
     pub fn cut_loss_price(&self) -> f64 {
