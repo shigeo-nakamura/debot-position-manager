@@ -192,18 +192,21 @@ impl TradePosition {
         }
     }
 
-    pub fn cancel(&mut self) {
+    pub fn cancel(&mut self) -> bool {
         match self.state {
             State::Opening => {
                 self.state = State::Canceled;
-                log::info!("-- Cancled the position: {:?}", self);
+                log::info!("-- Cancled the open order: {:?}", self);
+                true
             }
             State::Closing(_) => {
                 self.state = State::Open;
-                log::info!("-- Cancled the position: {:?}", self);
+                log::info!("-- Cancled the close order: {:?}", self);
+                false
             }
             _ => {
                 log::error!("cancel: Invalid state: {}", self.state);
+                false
             }
         }
     }
