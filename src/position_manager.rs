@@ -263,8 +263,8 @@ impl TradePosition {
         self.predicted_price
     }
 
-    pub fn state(&self) -> &State {
-        &self.state
+    pub fn state(&self) -> State {
+        self.state.clone()
     }
 
     pub fn token_name(&self) -> &str {
