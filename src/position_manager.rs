@@ -30,7 +30,7 @@ pub enum State {
     Open,
     Closing(String),
     Closed(String),
-    Canceled,
+    Canceled(String),
 }
 
 impl fmt::Display for State {
@@ -40,7 +40,7 @@ impl fmt::Display for State {
             State::Open => write!(f, "Open"),
             State::Closing(reason) => write!(f, "Closing({})", reason),
             State::Closed(reason) => write!(f, "Closed({})", reason),
-            State::Canceled => write!(f, "Canceled"),
+            State::Canceled(reason) => write!(f, "Canceled({}", reason),
         }
     }
 }
@@ -195,7 +195,7 @@ impl TradePosition {
     pub fn cancel(&mut self) -> bool {
         match self.state {
             State::Opening => {
-                self.state = State::Canceled;
+                self.state = State::Canceled(String::new());
                 log::info!("-- Cancled the open order: {:?}", self);
                 true
             }
@@ -324,6 +324,11 @@ impl TradePosition {
             Some(price) => Some(self.pnl(price) - fee),
             None => None,
         };
+
+        if self.state == State::Opening {
+            self.state = State::Canceled(reason.to_owned());
+            return;
+        }
 
         let prev_amount = self.amount;
         self.amount += amount;
