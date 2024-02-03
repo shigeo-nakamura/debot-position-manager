@@ -211,6 +211,37 @@ impl TradePosition {
         }
     }
 
+    pub fn add(
+        &mut self,
+        price: Option<f64>,
+        is_long_position: bool,
+        take_profit_price: f64,
+        cut_loss_price: f64,
+        amount: f64,
+        amount_in_anchor_token: f64,
+        fee: f64,
+    ) {
+        let actual_amount = Self::actual_amount(is_long_position, amount);
+
+        if actual_amount + self.amount == 0.0 {
+            return self.delete(price, fee, false, None);
+        }
+
+        self.open_time = chrono::Utc::now().timestamp();
+        self.open_time_str = self.open_time.to_datetime_string();
+
+        self.amount_in_anchor_token += amount_in_anchor_token;
+
+        self.take_profit_price = (self.take_profit_price * self.amount.abs()
+            + take_profit_price * amount)
+            / (self.amount.abs() + amount);
+
+        self.cut_loss_price = (self.cut_loss_price * self.amount.abs() + cut_loss_price * amount)
+            / (self.amount.abs() + amount);
+
+        self.update(price, actual_amount, fee, "add");
+    }
+
     pub fn should_cancel_order(&self) -> bool {
         match self.state {
             State::Opening | State::Closing(_) => {
@@ -325,7 +356,7 @@ impl TradePosition {
             None => None,
         };
 
-        if self.state == State::Opening {
+        if self.state == State::Opening && amount == 0.0 {
             self.state = State::Canceled(reason.to_owned());
             return;
         }
