@@ -68,6 +68,7 @@ pub struct TradePosition {
     amount: f64,
     amount_in_anchor_token: f64,
     pnl: Option<f64>,
+    realized_pnl: f64,
     fee: f64,
     atr: Option<f64>,
 }
@@ -112,6 +113,7 @@ impl TradePosition {
             amount: 0.0,
             amount_in_anchor_token: 0.0,
             pnl: None,
+            realized_pnl: 0.0,
             fee: 0.0,
             atr,
         }
@@ -179,6 +181,7 @@ impl TradePosition {
                 Some(r) => format!("Liquidated, {}", r),
                 None => String::from("Liquidated"),
             };
+            self.amount_in_anchor_token = 0.0;
             self.update(close_price, -self.amount, fee, &reason);
         } else {
             let reason = match self.state.clone() {
@@ -196,12 +199,12 @@ impl TradePosition {
         match self.state {
             State::Opening => {
                 self.state = State::Canceled(String::new());
-                log::info!("-- Cancled the open order: {:?}", self);
+                log::info!("-- Cancled the opening order: {}", self.order_id);
                 true
             }
             State::Closing(_) => {
                 self.state = State::Open;
-                log::info!("-- Cancled the close order: {:?}", self);
+                log::info!("-- Cancled the closing order: {}", self.order_id);
                 false
             }
             _ => {
@@ -227,17 +230,35 @@ impl TradePosition {
             return self.delete(price, fee, false, None);
         }
 
+        if self.is_long_position == is_long_position {
+            self.amount_in_anchor_token += amount_in_anchor_token;
+        } else {
+            self.amount_in_anchor_token =
+                (self.amount_in_anchor_token - amount_in_anchor_token).abs();
+        }
+
+        self.is_long_position = actual_amount + self.amount > 0.0;
+
         self.open_time = chrono::Utc::now().timestamp();
         self.open_time_str = self.open_time.to_datetime_string();
 
-        self.amount_in_anchor_token += amount_in_anchor_token;
+        if self.is_long_position == is_long_position {
+            self.take_profit_price = ((self.take_profit_price * self.amount.abs()
+                + take_profit_price * amount.abs())
+                / (self.amount.abs() + amount.abs()))
+            .abs();
 
-        self.take_profit_price = (self.take_profit_price * self.amount.abs()
-            + take_profit_price * amount)
-            / (self.amount.abs() + amount);
-
-        self.cut_loss_price = (self.cut_loss_price * self.amount.abs() + cut_loss_price * amount)
-            / (self.amount.abs() + amount);
+            self.cut_loss_price = ((self.cut_loss_price * self.amount.abs()
+                + cut_loss_price * amount.abs())
+                / (self.amount.abs() + amount.abs()))
+            .abs();
+        } else {
+            self.realized_pnl += if self.is_long_position {
+                (price.unwrap() - self.average_open_price) * amount
+            } else {
+                (self.average_open_price - price.unwrap()) * amount
+            };
+        }
 
         self.update(price, actual_amount, fee, "add");
     }
@@ -275,7 +296,7 @@ impl TradePosition {
     }
 
     pub fn pnl(&self, current_price: f64) -> f64 {
-        (current_price - self.average_open_price) * self.amount
+        (current_price - self.average_open_price) * self.amount + self.realized_pnl
     }
 
     pub fn id(&self) -> Option<u32> {
@@ -335,6 +356,9 @@ impl TradePosition {
     }
 
     fn should_take_profit(&self, close_price: f64) -> bool {
+        if self.state != State::Open {
+            return false;
+        }
         if self.is_long_position {
             close_price >= self.take_profit_price
         } else {
@@ -343,6 +367,9 @@ impl TradePosition {
     }
 
     fn should_cut_loss(&self, close_price: f64) -> bool {
+        if self.state != State::Open {
+            return false;
+        }
         if self.is_long_position {
             close_price <= self.cut_loss_price
         } else {
@@ -364,43 +391,67 @@ impl TradePosition {
         let prev_amount = self.amount;
         self.amount += amount;
 
-        if self.amount == 0.0 {
+        if self.amount_in_anchor_token == 0.0 {
+            self.amount = 0.0;
             self.state = State::Closed(reason.to_owned());
         }
 
         self.fee += fee;
 
         if self.state == State::Open {
-            self.average_open_price = (self.average_open_price * prev_amount.abs()
-                + price.unwrap() * amount.abs())
-                / self.amount.abs();
-            log::info!("Updated open position :{:?}", self);
+            self.average_open_price =
+                ((self.average_open_price * prev_amount + price.unwrap() * amount) / self.amount)
+                    .abs();
+            log::info!("Updated open position :{}", self.format_position(price));
         } else {
             self.close_price = price;
             self.close_amount = Some(prev_amount);
             self.pnl = pnl;
             self.close_time_str = DateTimeUtils::get_current_datetime_string();
+            self.amount_in_anchor_token = 0.0;
 
-            log::info!("-- Cloes the position: {:?}", self);
+            log::info!(
+                "-- Cloes the position:{}, {}",
+                reason,
+                self.format_position(price)
+            );
         }
     }
 
-    pub fn print_info(&self, current_price: f64) {
+    fn format_position(&self, price: Option<f64>) -> String {
+        let pnl = match price {
+            Some(p) => Some(self.pnl(p)),
+            None => None,
+        };
+
         let id = match self.id {
             Some(id) => id,
             None => 0,
         };
 
-        log::debug!(
-            "ID: {:<3} Token: {:<6} PNL: {:>6.3}, current: {:>6.3}, open: {:>6.3}, take_profit: {:>6.3}, cut_loss: {:>6.3}, amount: {:>6.6}",
+        let side = if self.is_long_position {
+            "Long"
+        } else {
+            "Short"
+        };
+
+        format!(
+            "ID: {:<3} Token: {:<6} PNL: {:>6.3?}/{:>6.3}, current: {:>6.3?}, open: {:>6.3}, take_profit: {:>6.3}, cut_loss: {:>6.3}, {}, amount: {:>6.6}, anchor_token_amount: {:>6.6}",
             id,
             self.token_name,
-            self.pnl(current_price,),
-            current_price,
+            pnl,
+            self.realized_pnl,
+            price,
             self.average_open_price,
             self.take_profit_price,
             self.cut_loss_price,
-            self.amount
-        );
+            side,
+            self.amount,
+            self.amount_in_anchor_token
+        )
+    }
+
+    pub fn print_info(&self, current_price: f64) {
+        log::debug!("{}", self.format_position(Some(current_price)));
     }
 }
