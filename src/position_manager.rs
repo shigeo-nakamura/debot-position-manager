@@ -296,7 +296,7 @@ impl TradePosition {
     }
 
     pub fn pnl(&self, current_price: f64) -> f64 {
-        (current_price - self.average_open_price) * self.amount + self.realized_pnl
+        (current_price - self.average_open_price) * self.amount + self.realized_pnl - self.fee
     }
 
     pub fn id(&self) -> Option<u32> {
@@ -375,6 +375,29 @@ impl TradePosition {
         } else {
             close_price >= self.cut_loss_price
         }
+    }
+
+    fn delete(&mut self, price: Option<f64>, reason: &str) {
+        if self.state == State::Opening && self.amount == 0.0 {
+            self.state = State::Canceled(reason.to_owned());
+            return;
+        }
+
+        if !matches!(self.state(), State::Closed(_)) {
+            log::error!("Wrong position state: {:?}", self);
+            return;
+        }
+
+        let pnl = match price {
+            Some(price) => Some(self.pnl(price)),
+            None => None,
+        };
+
+        self.close_price = price;
+        self.pnl = pnl;
+        self.close_time_str = DateTimeUtils::get_current_datetime_string();
+
+        log::info!("-- Cloes the position:{}", reason);
     }
 
     fn update(&mut self, price: Option<f64>, amount: f64, fee: f64, reason: &str) {
