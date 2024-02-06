@@ -119,7 +119,7 @@ impl TradePosition {
         }
     }
 
-    pub fn open(
+    pub fn on_opened(
         &mut self,
         average_open_price: f64,
         amount: f64,
@@ -156,7 +156,7 @@ impl TradePosition {
         return Ok(());
     }
 
-    pub fn close(&mut self, order_id: &str, reason: &str) -> Result<(), ()> {
+    pub fn request_close(&mut self, order_id: &str, reason: &str) -> Result<(), ()> {
         if self.state != State::Open {
             log::error!("close: Invalid state: {}", self.state);
             return Err(());
@@ -169,7 +169,7 @@ impl TradePosition {
         return Ok(());
     }
 
-    pub fn delete(
+    pub fn on_closed(
         &mut self,
         close_price: Option<f64>,
         fee: f64,
@@ -214,7 +214,7 @@ impl TradePosition {
         }
     }
 
-    pub fn add(
+    pub fn on_updated(
         &mut self,
         price: Option<f64>,
         is_long_position: bool,
@@ -227,7 +227,7 @@ impl TradePosition {
         let actual_amount = Self::actual_amount(is_long_position, amount);
 
         if actual_amount + self.amount == 0.0 {
-            return self.delete(price, fee, false, None);
+            return self.on_closed(price, fee, false, None);
         }
 
         if self.is_long_position == is_long_position {
