@@ -2,6 +2,8 @@ use debot_utils::{DateTimeUtils, HasId, ToDateTimeString};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use crate::PositionType;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReasonForClose {
     Liquidated,
@@ -59,7 +61,7 @@ pub struct TradePosition {
     open_time_str: String,
     close_time_str: String,
     average_open_price: f64,
-    is_long_position: bool,
+    position_type: PositionType,
     predicted_price: f64,
     take_profit_price: f64,
     cut_loss_price: f64,
@@ -68,7 +70,6 @@ pub struct TradePosition {
     amount: f64,
     amount_in_anchor_token: f64,
     pnl: Option<f64>,
-    realized_pnl: f64,
     fee: f64,
     atr: Option<f64>,
 }
@@ -87,7 +88,7 @@ impl TradePosition {
         order_effective_duration: i64,
         token_name: &str,
         fund_name: &str,
-        is_long_position: bool,
+        position_type: PositionType,
         predicted_price: f64,
         atr: Option<f64>,
     ) -> Self {
@@ -104,7 +105,7 @@ impl TradePosition {
             open_time_str: String::new(),
             close_time_str: String::new(),
             average_open_price: 0.0,
-            is_long_position,
+            position_type,
             predicted_price,
             take_profit_price: 0.0,
             cut_loss_price: 0.0,
@@ -113,7 +114,6 @@ impl TradePosition {
             amount: 0.0,
             amount_in_anchor_token: 0.0,
             pnl: None,
-            realized_pnl: 0.0,
             fee: 0.0,
             atr,
         }
@@ -133,25 +133,20 @@ impl TradePosition {
             return Err(());
         }
 
-        let actual_amount = Self::actual_amount(self.is_long_position, amount);
-        let side = if self.is_long_position { "Buy" } else { "Sell" };
-
-        log::info!(
-            "++ Opened a new {} position for token: {}, amount = {}",
-            side,
-            self.token_name,
-            actual_amount
-        );
-
         self.open_time = chrono::Utc::now().timestamp();
         self.open_time_str = self.open_time.to_datetime_string();
         self.average_open_price = average_open_price;
-        self.amount = actual_amount;
+        self.amount = amount;
         self.amount_in_anchor_token = amount_in_anchor_token;
         self.fee = fee;
         self.take_profit_price = take_profit_price;
         self.cut_loss_price = cut_loss_price;
         self.state = State::Open;
+
+        log::info!(
+            "++ Opened a new position: {}",
+            self.format_position(Some(average_open_price))
+        );
 
         return Ok(());
     }
@@ -176,29 +171,30 @@ impl TradePosition {
         do_liquidate: bool,
         liquidated_reason: Option<String>,
     ) {
-        if do_liquidate {
-            let reason = match liquidated_reason {
+        self.fee += fee;
+
+        let reason = if do_liquidate {
+            match liquidated_reason {
                 Some(r) => format!("Liquidated, {}", r),
                 None => String::from("Liquidated"),
-            };
-            self.amount_in_anchor_token = 0.0;
-            self.update(close_price, -self.amount, fee, &reason);
+            }
         } else {
-            let reason = match self.state.clone() {
+            match self.state.clone() {
                 State::Closing(reason) => reason,
                 _ => {
                     log::error!("delete: Invalid state: {}", self.state);
                     return;
                 }
-            };
-            self.update(close_price, -self.amount, fee, &reason);
-        }
+            }
+        };
+
+        self.delete(close_price, &reason);
     }
 
     pub fn cancel(&mut self) -> bool {
         match self.state {
             State::Opening => {
-                self.state = State::Canceled(String::new());
+                self.state = State::Canceled(String::from("Not filled"));
                 log::info!("-- Cancled the opening order: {}", self.order_id);
                 true
             }
@@ -214,53 +210,102 @@ impl TradePosition {
         }
     }
 
-    pub fn on_updated(
+    fn increase(
         &mut self,
-        price: Option<f64>,
-        is_long_position: bool,
+        current_price: f64,
         take_profit_price: f64,
         cut_loss_price: f64,
         amount: f64,
         amount_in_anchor_token: f64,
         fee: f64,
     ) {
-        let actual_amount = Self::actual_amount(is_long_position, amount);
+        self.amount += amount;
+        self.amount_in_anchor_token += amount_in_anchor_token;
+        self.fee += fee;
 
-        if actual_amount + self.amount == 0.0 {
-            return self.on_closed(price, fee, false, None);
+        self.average_open_price = self.amount_in_anchor_token / self.amount;
+
+        self.take_profit_price = (self.take_profit_price * self.amount
+            + take_profit_price * amount)
+            / (self.amount + amount);
+
+        self.cut_loss_price =
+            (self.cut_loss_price * self.amount + cut_loss_price * amount) / (self.amount + amount);
+
+        log::info!(
+            "+ Increase the position: {}",
+            self.format_position(Some(current_price))
+        );
+    }
+
+    fn delete(&mut self, current_price: Option<f64>, reason: &str) {
+        if self.state == State::Opening && self.amount == 0.0 {
+            self.state = State::Canceled(reason.to_owned());
+            return;
         }
 
-        if self.is_long_position == is_long_position {
-            self.amount_in_anchor_token += amount_in_anchor_token;
-        } else {
-            self.amount_in_anchor_token =
-                (self.amount_in_anchor_token - amount_in_anchor_token).abs();
-        }
+        self.state = State::Closed(reason.to_owned());
+        self.close_price = current_price;
+        self.pnl = self.total_pnl(current_price);
+        self.close_amount = Some(self.amount);
+        self.amount = 0.0;
+        self.amount_in_anchor_token = 0.0;
+        self.close_time_str = DateTimeUtils::get_current_datetime_string();
 
-        self.is_long_position = actual_amount + self.amount > 0.0;
+        log::info!("-- Cloes the position:{}", reason);
+    }
 
+    pub fn on_updated(
+        &mut self,
+        current_price: f64,
+        position_type: PositionType,
+        take_profit_price: f64,
+        cut_loss_price: f64,
+        amount: f64,
+        amount_in_anchor_token: f64,
+        fee: f64,
+    ) {
         self.open_time = chrono::Utc::now().timestamp();
         self.open_time_str = self.open_time.to_datetime_string();
 
-        if self.is_long_position == is_long_position {
-            self.take_profit_price = ((self.take_profit_price * self.amount.abs()
-                + take_profit_price * amount.abs())
-                / (self.amount.abs() + amount.abs()))
-            .abs();
-
-            self.cut_loss_price = ((self.cut_loss_price * self.amount.abs()
-                + cut_loss_price * amount.abs())
-                / (self.amount.abs() + amount.abs()))
-            .abs();
+        if self.position_type == position_type {
+            self.increase(
+                current_price,
+                take_profit_price,
+                cut_loss_price,
+                amount,
+                amount_in_anchor_token,
+                fee,
+            );
         } else {
-            self.realized_pnl += if self.is_long_position {
-                (price.unwrap() - self.average_open_price) * amount
-            } else {
-                (self.average_open_price - price.unwrap()) * amount
-            };
-        }
+            self.fee += fee;
+            self.amount -= amount;
+            self.amount_in_anchor_token -= amount_in_anchor_token;
 
-        self.update(price, actual_amount, fee, "add");
+            // Full close
+            if self.amount == 0.0 {
+                self.average_open_price = 0.0;
+                self.delete(Some(current_price), "CounterTrade");
+            }
+            // Patial close
+            else {
+                if self.amount < 0.0 {
+                    self.amount *= -1.0;
+                    self.amount_in_anchor_token *= -1.0;
+                    self.average_open_price = self.amount_in_anchor_token / self.amount;
+                    self.position_type = self.position_type.opposite();
+                    self.take_profit_price = take_profit_price;
+                    self.cut_loss_price = cut_loss_price;
+                }
+
+                log::info!(
+                    "** Reduce the position: {}",
+                    self.format_position(Some(current_price))
+                );
+            }
+        }
+        // just for debugging
+        self.ordered_price = self.average_open_price;
     }
 
     pub fn should_cancel_order(&self) -> bool {
@@ -295,8 +340,20 @@ impl TradePosition {
         None
     }
 
-    pub fn pnl(&self, current_price: f64) -> f64 {
-        (current_price - self.average_open_price) * self.amount + self.realized_pnl - self.fee
+    pub fn total_pnl(&self, current_price: Option<f64>) -> Option<f64> {
+        if let Some(price) = current_price {
+            Some(self.pnl(price, self.amount) - self.fee)
+        } else {
+            None
+        }
+    }
+
+    fn pnl(&self, current_price: f64, amount: f64) -> f64 {
+        if self.position_type == PositionType::Long {
+            (current_price - self.average_open_price) * amount
+        } else {
+            (self.average_open_price - current_price) * amount
+        }
     }
 
     pub fn id(&self) -> Option<u32> {
@@ -328,15 +385,11 @@ impl TradePosition {
     }
 
     pub fn amount(&self) -> f64 {
-        if self.is_long_position {
-            self.amount
-        } else {
-            -self.amount
-        }
+        self.amount
     }
 
-    pub fn is_long_position(&self) -> bool {
-        self.is_long_position
+    pub fn position_type(&self) -> PositionType {
+        self.position_type.clone()
     }
 
     pub fn cut_loss_price(&self) -> f64 {
@@ -347,19 +400,11 @@ impl TradePosition {
         self.amount_in_anchor_token
     }
 
-    fn actual_amount(is_long_position: bool, amount: f64) -> f64 {
-        if is_long_position {
-            amount
-        } else {
-            -amount
-        }
-    }
-
     fn should_take_profit(&self, close_price: f64) -> bool {
         if self.state != State::Open {
             return false;
         }
-        if self.is_long_position {
+        if self.position_type == PositionType::Long {
             close_price >= self.take_profit_price
         } else {
             close_price <= self.take_profit_price
@@ -370,111 +415,37 @@ impl TradePosition {
         if self.state != State::Open {
             return false;
         }
-        if self.is_long_position {
+        if self.position_type == PositionType::Long {
             close_price <= self.cut_loss_price
         } else {
             close_price >= self.cut_loss_price
         }
     }
 
-    fn delete(&mut self, price: Option<f64>, reason: &str) {
-        if self.state == State::Opening && self.amount == 0.0 {
-            self.state = State::Canceled(reason.to_owned());
-            return;
-        }
-
-        if !matches!(self.state(), State::Closed(_)) {
-            log::error!("Wrong position state: {:?}", self);
-            return;
-        }
-
-        let pnl = match price {
-            Some(price) => Some(self.pnl(price)),
-            None => None,
-        };
-
-        self.close_price = price;
-        self.pnl = pnl;
-        self.close_time_str = DateTimeUtils::get_current_datetime_string();
-
-        log::info!("-- Cloes the position:{}", reason);
-    }
-
-    fn update(&mut self, price: Option<f64>, amount: f64, fee: f64, reason: &str) {
-        let pnl = match price {
-            Some(price) => Some(self.pnl(price) - fee),
-            None => None,
-        };
-
-        if self.state == State::Opening && amount == 0.0 {
-            self.state = State::Canceled(reason.to_owned());
-            return;
-        }
-
-        let prev_amount = self.amount;
-        self.amount += amount;
-
-        if self.amount_in_anchor_token == 0.0 {
-            self.amount = 0.0;
-            self.state = State::Closed(reason.to_owned());
-        }
-
-        self.fee += fee;
-
-        if self.state == State::Open {
-            self.average_open_price =
-                ((self.average_open_price * prev_amount + price.unwrap() * amount) / self.amount)
-                    .abs();
-            log::info!("Updated open position :{}", self.format_position(price));
-        } else {
-            self.close_price = price;
-            self.close_amount = Some(prev_amount);
-            self.pnl = pnl;
-            self.close_time_str = DateTimeUtils::get_current_datetime_string();
-            self.amount_in_anchor_token = 0.0;
-
-            log::info!(
-                "-- Cloes the position:{}, {}",
-                reason,
-                self.format_position(price)
-            );
-        }
-    }
-
     fn format_position(&self, price: Option<f64>) -> String {
-        let pnl = match price {
-            Some(p) => Some(self.pnl(p)),
-            None => None,
-        };
-
         let id = match self.id {
             Some(id) => id,
             None => 0,
         };
 
-        let side = if self.is_long_position {
-            "Long"
-        } else {
-            "Short"
-        };
-
         format!(
-            "ID: {:<3} Token: {:<6} PNL: {:>6.3?}/{:>6.3}, current: {:>6.3?}, open: {:>6.3}, take_profit: {:>6.3}, cut_loss: {:>6.3}, {}, amount: {:>6.6}, anchor_token_amount: {:>6.6}",
+            "ID:{} {:<6} pnl: {:3.3}, [{}] current: {:>6.3}, open: {:>6.3}, take: {:>6.3}, cut: {:>6.3}, amount: {:6.6}/{:6.6}",
             id,
             self.token_name,
-            pnl,
-            self.realized_pnl,
-            price,
+            self.total_pnl(price).unwrap_or(0.0),
+            self.position_type,
+            price.unwrap_or_default(),
             self.average_open_price,
             self.take_profit_price,
             self.cut_loss_price,
-            side,
             self.amount,
             self.amount_in_anchor_token
         )
     }
 
     pub fn print_info(&self, current_price: f64) {
-        log::debug!("{}", self.format_position(Some(current_price)));
+        if self.amount != 0.0 {
+            log::debug!("{}", self.format_position(Some(current_price)));
+        }
     }
 }
