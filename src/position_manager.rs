@@ -195,12 +195,12 @@ impl TradePosition {
         match self.state {
             State::Opening => {
                 self.state = State::Canceled(String::from("Not filled"));
-                log::info!("-- Cancled the opening order: {}", self.order_id);
+                log::debug!("-- Cancled the opening order: {}", self.order_id);
                 true
             }
             State::Closing(_) => {
                 self.state = State::Open;
-                log::info!("-- Cancled the closing order: {}", self.order_id);
+                log::debug!("-- Cancled the closing order: {}", self.order_id);
                 false
             }
             _ => {
@@ -213,17 +213,16 @@ impl TradePosition {
     fn increase(
         &mut self,
         current_price: f64,
+        average_open_price: f64,
         take_profit_price: f64,
         cut_loss_price: f64,
         amount: f64,
         amount_in_anchor_token: f64,
         fee: f64,
     ) {
-        self.amount += amount;
-        self.amount_in_anchor_token += amount_in_anchor_token;
-        self.fee += fee;
-
-        self.average_open_price = self.amount_in_anchor_token / self.amount;
+        self.average_open_price = (self.average_open_price * self.amount
+            + average_open_price * amount)
+            / (self.amount + amount);
 
         self.take_profit_price = (self.take_profit_price * self.amount
             + take_profit_price * amount)
@@ -231,6 +230,10 @@ impl TradePosition {
 
         self.cut_loss_price =
             (self.cut_loss_price * self.amount + cut_loss_price * amount) / (self.amount + amount);
+
+        self.amount += amount;
+        self.amount_in_anchor_token += amount_in_anchor_token;
+        self.fee += fee;
 
         log::info!(
             "+ Increase the position: {}",
@@ -258,6 +261,7 @@ impl TradePosition {
     pub fn on_updated(
         &mut self,
         current_price: f64,
+        average_open_price: f64,
         position_type: PositionType,
         take_profit_price: f64,
         cut_loss_price: f64,
@@ -271,6 +275,7 @@ impl TradePosition {
         if self.position_type == position_type {
             self.increase(
                 current_price,
+                average_open_price,
                 take_profit_price,
                 cut_loss_price,
                 amount,
