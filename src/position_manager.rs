@@ -191,21 +191,21 @@ impl TradePosition {
         self.delete(close_price, &reason);
     }
 
-    pub fn cancel(&mut self) -> bool {
+    pub fn cancel(&mut self) -> Result<bool, ()> {
         match self.state {
             State::Opening => {
                 self.state = State::Canceled(String::from("Not filled"));
                 log::debug!("-- Cancled the opening order: {}", self.order_id);
-                true
+                Ok(true)
             }
             State::Closing(_) => {
                 self.state = State::Open;
-                log::debug!("-- Cancled the closing order: {}", self.order_id);
-                false
+                log::info!("-- Cancled the closing order: {}", self.order_id);
+                Ok(false)
             }
             _ => {
                 log::error!("cancel: Invalid state: {}", self.state);
-                false
+                Err(())
             }
         }
     }

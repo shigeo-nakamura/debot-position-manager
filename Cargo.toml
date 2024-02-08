@@ -1,6 +1,6 @@
 [package]
 name = "debot-position-manager"
-version = "1.2.35"
+version = "1.2.36"
 authors = ["Shigeo NAKAMURA <nakamura_shigeo@yahoo.com>"]
 edition = "2021"
 description = "Functions to manage trade positions"
