@@ -249,13 +249,13 @@ impl TradePosition {
 
         self.state = State::Closed(reason.to_owned());
         self.close_price = current_price;
-        self.pnl = self.total_pnl(current_price);
+        self.pnl = self.calculate_pnl(current_price);
         self.close_amount = Some(self.amount);
         self.amount = 0.0;
         self.amount_in_anchor_token = 0.0;
         self.close_time_str = DateTimeUtils::get_current_datetime_string();
 
-        log::info!("-- Cloes the position:{}", reason);
+        log::info!("-- Cloes the position: {}, pnl: {:.3?}", reason, self.pnl);
     }
 
     pub fn on_updated(
@@ -345,15 +345,15 @@ impl TradePosition {
         None
     }
 
-    pub fn total_pnl(&self, current_price: Option<f64>) -> Option<f64> {
+    pub fn calculate_pnl(&self, current_price: Option<f64>) -> Option<f64> {
         if let Some(price) = current_price {
-            Some(self.pnl(price, self.amount) - self.fee)
+            Some(self.unrealized_pnl(price, self.amount) - self.fee)
         } else {
             None
         }
     }
 
-    fn pnl(&self, current_price: f64, amount: f64) -> f64 {
+    fn unrealized_pnl(&self, current_price: f64, amount: f64) -> f64 {
         if self.position_type == PositionType::Long {
             (current_price - self.average_open_price) * amount
         } else {
@@ -379,6 +379,10 @@ impl TradePosition {
 
     pub fn predicted_price(&self) -> f64 {
         self.predicted_price
+    }
+
+    pub fn pnl(&self) -> f64 {
+        self.pnl.unwrap_or_default()
     }
 
     pub fn state(&self) -> State {
@@ -441,7 +445,7 @@ impl TradePosition {
             "ID:{} {:<6} pnl: {:3.3}, [{}] current: {:>6.3}, open: {:>6.3}, take: {:>6.3}, cut: {:>6.3}, amount: {:6.6}/{:6.6}",
             id,
             self.token_name,
-            self.total_pnl(price).unwrap_or(0.0),
+            self.calculate_pnl(price).unwrap_or(0.0),
             self.position_type,
             price.unwrap_or_default(),
             self.average_open_price,
