@@ -365,6 +365,10 @@ impl TradePosition {
         self.id
     }
 
+    pub fn average_open_price(&self) -> f64 {
+        self.average_open_price
+    }
+
     pub fn order_id(&self) -> &str {
         &self.order_id
     }
