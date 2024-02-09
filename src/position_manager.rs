@@ -52,6 +52,7 @@ pub struct TradePosition {
     id: Option<u32>,
     order_id: String,
     ordered_price: f64,
+    unfilled_amount: f64,
     state: State,
     token_name: String,
     fund_name: String,
@@ -65,8 +66,8 @@ pub struct TradePosition {
     predicted_price: f64,
     take_profit_price: Option<f64>,
     cut_loss_price: Option<f64>,
-    close_price: Option<f64>,
-    close_amount: Option<f64>,
+    close_price: f64,
+    close_asset_in_usd: f64,
     amount: f64,
     asset_in_usd: f64,
     pnl: f64,
@@ -80,11 +81,18 @@ impl HasId for TradePosition {
     }
 }
 
+enum UpdateResult {
+    Closed,
+    Decreaed,
+    Inverted,
+}
+
 impl TradePosition {
     pub fn new(
         id: u32,
         order_id: &str,
         ordered_price: f64,
+        ordered_amount: f64,
         order_effective_duration: i64,
         token_name: &str,
         fund_name: &str,
@@ -96,6 +104,7 @@ impl TradePosition {
             id: Some(id),
             order_id: order_id.to_owned(),
             ordered_price,
+            unfilled_amount: ordered_amount,
             order_effective_duration,
             state: State::Opening,
             token_name: token_name.to_owned(),
@@ -109,8 +118,8 @@ impl TradePosition {
             predicted_price,
             take_profit_price: None,
             cut_loss_price: None,
-            close_price: None,
-            close_amount: None,
+            close_price: 0.0,
+            close_asset_in_usd: 0.0,
             amount: 0.0,
             asset_in_usd: 0.0,
             pnl: 0.0,
@@ -119,58 +128,69 @@ impl TradePosition {
         }
     }
 
-    pub fn on_opened(
+    pub fn on_filled(
         &mut self,
-        average_open_price: f64,
+        position_type: PositionType,
+        filled_price: f64,
         amount: f64,
         asset_in_usd: f64,
         fee: f64,
-        take_profit_price: f64,
-        cut_loss_price: f64,
+        take_profit_price: Option<f64>,
+        cut_loss_price: Option<f64>,
     ) -> Result<(), ()> {
-        if self.state != State::Opening {
-            log::error!("open: Invalid state: {}", self.state);
-            return Err(());
+        self.unfilled_amount -= amount;
+
+        if self.unfilled_amount == 0.0 {
+            match self.state {
+                State::Opening => {
+                    self.state = State::Open;
+                }
+                State::Open | State::Closing(_) => {}
+                _ => {
+                    log::error!("on_filled: Invalid state: {}", self.state);
+                    return Err(());
+                }
+            }
         }
 
         self.open_time = chrono::Utc::now().timestamp();
         self.open_time_str = self.open_time.to_datetime_string();
-        self.average_open_price = average_open_price;
-        self.amount = amount;
-        self.asset_in_usd = asset_in_usd;
-        self.fee = fee;
-        self.take_profit_price = Some(take_profit_price);
-        self.cut_loss_price = Some(cut_loss_price);
-        self.state = State::Open;
 
-        log::info!(
-            "++ Opened a new position: {}",
-            self.format_position(average_open_price)
-        );
+        self.fee += fee;
 
-        return Ok(());
-    }
-
-    pub fn request_close(&mut self, order_id: &str, reason: &str) -> Result<(), ()> {
-        if self.state != State::Open {
-            log::error!("close: Invalid state: {}", self.state);
-            return Err(());
+        if self.position_type == position_type {
+            self.increase(
+                position_type,
+                filled_price,
+                take_profit_price,
+                cut_loss_price,
+                amount,
+                asset_in_usd,
+            );
+        } else {
+            self.decrease(
+                position_type,
+                filled_price,
+                take_profit_price,
+                cut_loss_price,
+                amount,
+                asset_in_usd,
+            );
         }
 
-        self.order_id = order_id.to_owned();
-        self.ordered_time = chrono::Utc::now().timestamp();
-        self.state = State::Closing(reason.to_owned());
+        // To sort orders and the open position by order price(for debugging)
+        self.ordered_price = self.average_open_price;
 
         return Ok(());
     }
 
-    pub fn on_closed(
+    pub fn on_liquidated(
         &mut self,
-        close_price: Option<f64>,
+        close_price: f64,
         fee: f64,
         do_liquidate: bool,
         liquidated_reason: Option<String>,
-    ) {
+    ) -> Result<(), ()> {
         self.fee += fee;
 
         let reason = if do_liquidate {
@@ -183,12 +203,38 @@ impl TradePosition {
                 State::Closing(reason) => reason,
                 _ => {
                     log::error!("delete: Invalid state: {}", self.state);
-                    return;
+                    return Err(());
                 }
             }
         };
 
         self.delete(close_price, &reason);
+
+        return Ok(());
+    }
+
+    pub fn request_close(&mut self, order_id: &str, reason: &str) -> Result<(), ()> {
+        match self.state() {
+            State::Opening => {
+                if self.unfilled_amount == 0.0 {
+                    log::error!("close: Invalid state(1): {:?}", self);
+                    return Err(());
+                }
+            }
+            State::Open => {
+                log::info!("close: reason = {}", reason.to_owned());
+            }
+            _ => {
+                log::error!("close: Invalid state(2): {:?}", self);
+                return Err(());
+            }
+        }
+
+        self.order_id = order_id.to_owned();
+        self.ordered_time = chrono::Utc::now().timestamp();
+        self.state = State::Closing(reason.to_owned());
+
+        return Ok(());
     }
 
     pub fn cancel(&mut self) -> Result<bool, ()> {
@@ -200,6 +246,8 @@ impl TradePosition {
             }
             State::Closing(_) => {
                 self.state = State::Open;
+                self.ordered_time = chrono::Utc::now().timestamp();
+
                 log::info!("-- Cancled the closing order: {}", self.order_id);
                 Ok(false)
             }
@@ -212,110 +260,146 @@ impl TradePosition {
 
     fn increase(
         &mut self,
-        current_price: f64,
-        average_open_price: f64,
-        take_profit_price: f64,
-        cut_loss_price: f64,
+        position_type: PositionType,
+        filled_price: f64,
+        take_profit_price: Option<f64>,
+        cut_loss_price: Option<f64>,
         amount: f64,
         asset_in_usd: f64,
-        fee: f64,
     ) {
-        self.average_open_price = (self.average_open_price * self.amount
-            + average_open_price * amount)
-            / (self.amount + amount);
+        let current_amount = self.amount.abs();
 
-        self.take_profit_price = match self.take_profit_price {
-            Some(price) => {
-                Some((price * self.amount + take_profit_price * amount) / (self.amount + amount))
-            }
-            None => Some(take_profit_price),
+        self.average_open_price = (self.average_open_price * current_amount
+            + filled_price * amount)
+            / (current_amount + amount);
+
+        self.take_profit_price = match take_profit_price {
+            Some(new_price) => match self.take_profit_price {
+                Some(current_price) => Some(
+                    (current_price * current_amount + new_price * amount)
+                        / (current_amount + amount),
+                ),
+                None => Some(new_price),
+            },
+            None => None,
         };
 
-        self.cut_loss_price = match self.cut_loss_price {
-            Some(price) => {
-                Some((price * self.amount + cut_loss_price * amount) / (self.amount + amount))
-            }
-            None => Some(take_profit_price),
+        self.cut_loss_price = match cut_loss_price {
+            Some(new_price) => match self.cut_loss_price {
+                Some(current_price) => Some(
+                    (current_price * current_amount + new_price * amount)
+                        / (current_amount + amount),
+                ),
+                None => Some(new_price),
+            },
+            None => None,
         };
 
-        self.amount += amount;
-        self.asset_in_usd += asset_in_usd;
-        self.fee += fee;
+        self.update_amount(position_type, amount, asset_in_usd, None);
 
         log::info!(
             "+ Increase the position: {}",
-            self.format_position(current_price)
+            self.format_position(filled_price)
         );
     }
 
-    fn delete(&mut self, current_price: Option<f64>, reason: &str) {
+    fn decrease(
+        &mut self,
+        position_type: PositionType,
+        filled_price: f64,
+        take_profit_price: Option<f64>,
+        cut_loss_price: Option<f64>,
+        amount: f64,
+        asset_in_usd: f64,
+    ) {
+        match self.update_amount(position_type, amount, asset_in_usd, Some(filled_price)) {
+            UpdateResult::Closed => {
+                self.realize_pnl(self.asset_in_usd);
+                self.delete(filled_price, "CounterTrade");
+            }
+            UpdateResult::Inverted => {
+                self.average_open_price = filled_price;
+                self.take_profit_price = take_profit_price;
+                self.cut_loss_price = cut_loss_price;
+                self.position_type = self.position_type.opposite();
+                log::info!(
+                    "- The position is inverted: {}",
+                    self.format_position(filled_price)
+                );
+            }
+            UpdateResult::Decreaed => {
+                log::info!(
+                    "** The position is decreased: {}",
+                    self.format_position(filled_price)
+                );
+            }
+        }
+    }
+
+    fn delete(&mut self, close_price: f64, reason: &str) {
         if self.state == State::Opening && self.amount == 0.0 {
             self.state = State::Canceled(reason.to_owned());
             return;
         }
 
         self.state = State::Closed(reason.to_owned());
-        self.close_price = current_price;
+        self.close_asset_in_usd = self.asset_in_usd;
+        self.close_price = close_price;
+        self.pnl += self.unrealized_pnl(close_price, self.amount);
         self.pnl -= self.fee;
-        self.close_amount = Some(self.amount);
+        self.amount = 0.0;
+        self.asset_in_usd = 0.0;
         self.close_time_str = DateTimeUtils::get_current_datetime_string();
 
         log::info!("-- Cloes the position: {}, pnl: {:.3?}", reason, self.pnl);
     }
 
-    pub fn on_updated(
+    fn update_amount(
         &mut self,
-        current_price: f64,
-        average_open_price: f64,
         position_type: PositionType,
-        take_profit_price: f64,
-        cut_loss_price: f64,
         amount: f64,
         asset_in_usd: f64,
-        fee: f64,
-    ) {
-        self.open_time = chrono::Utc::now().timestamp();
-        self.open_time_str = self.open_time.to_datetime_string();
+        close_price: Option<f64>,
+    ) -> UpdateResult {
+        let mut ret = UpdateResult::Decreaed;
 
-        if self.position_type == position_type {
-            self.increase(
-                current_price,
-                average_open_price,
-                take_profit_price,
-                cut_loss_price,
-                amount,
-                asset_in_usd,
-                fee,
-            );
-        } else {
-            self.fee += fee;
-            self.amount -= amount;
-            self.asset_in_usd -= asset_in_usd;
+        if let Some(close_price) = close_price {
+            let prev_amount = self.amount;
+            let new_amount = if position_type == PositionType::Long {
+                prev_amount + amount
+            } else {
+                prev_amount - amount
+            };
 
-            // Full close
-            if self.amount == 0.0 {
-                self.average_open_price = 0.0;
-                self.delete(Some(current_price), "CounterTrade");
-            }
-            // Patial close
-            else {
-                if self.amount < 0.0 {
-                    self.amount *= -1.0;
-                    self.asset_in_usd *= -1.0;
-                    self.average_open_price = self.asset_in_usd / self.amount;
-                    self.position_type = self.position_type.opposite();
-                    self.take_profit_price = Some(take_profit_price);
-                    self.cut_loss_price = Some(cut_loss_price);
-                }
-
-                log::info!(
-                    "** Reduce the position: {}",
-                    self.format_position(current_price)
-                );
+            if prev_amount * new_amount < 0.0 {
+                let pnl = self.unrealized_pnl(close_price, prev_amount);
+                self.realize_pnl(pnl);
+                ret = UpdateResult::Inverted;
             }
         }
-        // just for debugging
-        self.ordered_price = self.average_open_price;
+
+        if position_type == PositionType::Long {
+            self.amount += amount;
+            self.asset_in_usd -= asset_in_usd;
+        } else {
+            self.amount -= amount;
+            self.asset_in_usd += asset_in_usd;
+        }
+
+        if self.amount == 0.0 {
+            ret = UpdateResult::Closed;
+        }
+
+        ret
+    }
+
+    fn realize_pnl(&mut self, pnl: f64) {
+        self.pnl += pnl;
+        self.asset_in_usd -= pnl;
+    }
+
+    fn unrealized_pnl(&self, price: f64, amount: f64) -> f64 {
+        amount * price + self.asset_in_usd
     }
 
     pub fn should_cancel_order(&self) -> bool {
@@ -348,10 +432,6 @@ impl TradePosition {
             return Some(ReasonForClose::Expired);
         }
         None
-    }
-
-    pub fn unrealized_pnl(&self, current_price: f64) -> f64 {
-        self.amount * current_price + self.asset_in_usd
     }
 
     pub fn pnl(&self) -> f64 {
@@ -394,12 +474,20 @@ impl TradePosition {
         self.amount
     }
 
+    pub fn unfilled_amount(&self) -> f64 {
+        self.unfilled_amount
+    }
+
     pub fn position_type(&self) -> PositionType {
         self.position_type.clone()
     }
 
     pub fn asset_in_usd(&self) -> f64 {
         self.asset_in_usd
+    }
+
+    pub fn close_asset_in_usd(&self) -> f64 {
+        self.close_asset_in_usd
     }
 
     fn should_take_profit(&self, close_price: f64) -> bool {
@@ -442,16 +530,23 @@ impl TradePosition {
             None => 0,
         };
 
+        let open_price = self.average_open_price;
+        let take_profit_price = self.take_profit_price.unwrap_or_default();
+        let cut_loss_price = self.cut_loss_price.unwrap_or_default();
+
         format!(
-            "ID:{} {:<6} pnl: {:3.3}, [{}] current: {:>6.3}, open: {:>6.3}, take: {:>6.3}, cut: {:>6.3}, amount: {:6.6}/{:6.6}",
+            "ID:{} {:<6} un-pnl: {:3.3}, re-pnl: {:3.3}, [{}] open: {:>6.3}({:.3}), cut: {:>6.3}({:.3}), take: {:>6.3}({:.3}), amount: {:6.6}/{:6.6}",
             id,
             self.token_name,
-            self.unrealized_pnl(price),
+            self.unrealized_pnl(price, self.amount),
+            self.pnl,
             self.position_type,
-            price,
-            self.average_open_price,
-            self.take_profit_price.unwrap_or_default(),
-            self.cut_loss_price.unwrap_or_default(),
+            open_price,
+            open_price - price,
+            cut_loss_price,
+            cut_loss_price - price,
+            take_profit_price,
+            take_profit_price - price,
             self.amount,
             self.asset_in_usd
         )
