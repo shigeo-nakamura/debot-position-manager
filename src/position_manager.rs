@@ -63,8 +63,8 @@ pub struct TradePosition {
     average_open_price: f64,
     position_type: PositionType,
     predicted_price: f64,
-    take_profit_price: f64,
-    cut_loss_price: f64,
+    take_profit_price: Option<f64>,
+    cut_loss_price: Option<f64>,
     close_price: Option<f64>,
     close_amount: Option<f64>,
     amount: f64,
@@ -107,8 +107,8 @@ impl TradePosition {
             average_open_price: 0.0,
             position_type,
             predicted_price,
-            take_profit_price: 0.0,
-            cut_loss_price: 0.0,
+            take_profit_price: None,
+            cut_loss_price: None,
             close_price: None,
             close_amount: None,
             amount: 0.0,
@@ -139,8 +139,8 @@ impl TradePosition {
         self.amount = amount;
         self.amount_in_anchor_token = amount_in_anchor_token;
         self.fee = fee;
-        self.take_profit_price = take_profit_price;
-        self.cut_loss_price = cut_loss_price;
+        self.take_profit_price = Some(take_profit_price);
+        self.cut_loss_price = Some(cut_loss_price);
         self.state = State::Open;
 
         log::info!(
@@ -224,12 +224,19 @@ impl TradePosition {
             + average_open_price * amount)
             / (self.amount + amount);
 
-        self.take_profit_price = (self.take_profit_price * self.amount
-            + take_profit_price * amount)
-            / (self.amount + amount);
+        self.take_profit_price = match self.take_profit_price {
+            Some(price) => {
+                Some((price * self.amount + take_profit_price * amount) / (self.amount + amount))
+            }
+            None => Some(take_profit_price),
+        };
 
-        self.cut_loss_price =
-            (self.cut_loss_price * self.amount + cut_loss_price * amount) / (self.amount + amount);
+        self.cut_loss_price = match self.cut_loss_price {
+            Some(price) => {
+                Some((price * self.amount + cut_loss_price * amount) / (self.amount + amount))
+            }
+            None => Some(take_profit_price),
+        };
 
         self.amount += amount;
         self.amount_in_anchor_token += amount_in_anchor_token;
@@ -299,8 +306,8 @@ impl TradePosition {
                     self.amount_in_anchor_token *= -1.0;
                     self.average_open_price = self.amount_in_anchor_token / self.amount;
                     self.position_type = self.position_type.opposite();
-                    self.take_profit_price = take_profit_price;
-                    self.cut_loss_price = cut_loss_price;
+                    self.take_profit_price = Some(take_profit_price);
+                    self.cut_loss_price = Some(cut_loss_price);
                 }
 
                 log::info!(
@@ -405,10 +412,6 @@ impl TradePosition {
         self.position_type.clone()
     }
 
-    pub fn cut_loss_price(&self) -> f64 {
-        self.cut_loss_price
-    }
-
     pub fn amount_in_anchor_token(&self) -> f64 {
         self.amount_in_anchor_token
     }
@@ -417,10 +420,16 @@ impl TradePosition {
         if self.state != State::Open {
             return false;
         }
-        if self.position_type == PositionType::Long {
-            close_price >= self.take_profit_price
-        } else {
-            close_price <= self.take_profit_price
+
+        match self.take_profit_price {
+            Some(take_profit_price) => {
+                if self.position_type == PositionType::Long {
+                    close_price >= take_profit_price
+                } else {
+                    close_price <= take_profit_price
+                }
+            }
+            None => false,
         }
     }
 
@@ -428,10 +437,16 @@ impl TradePosition {
         if self.state != State::Open {
             return false;
         }
-        if self.position_type == PositionType::Long {
-            close_price <= self.cut_loss_price
-        } else {
-            close_price >= self.cut_loss_price
+
+        match self.cut_loss_price {
+            Some(cut_loss_price) => {
+                if self.position_type == PositionType::Long {
+                    close_price <= cut_loss_price
+                } else {
+                    close_price >= cut_loss_price
+                }
+            }
+            None => false,
         }
     }
 
@@ -449,8 +464,8 @@ impl TradePosition {
             self.position_type,
             price.unwrap_or_default(),
             self.average_open_price,
-            self.take_profit_price,
-            self.cut_loss_price,
+            self.take_profit_price.unwrap_or_default(),
+            self.cut_loss_price.unwrap_or_default(),
             self.amount,
             self.amount_in_anchor_token
         )
