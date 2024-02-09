@@ -68,8 +68,8 @@ pub struct TradePosition {
     close_price: Option<f64>,
     close_amount: Option<f64>,
     amount: f64,
-    amount_in_anchor_token: f64,
-    pnl: Option<f64>,
+    asset_in_usd: f64,
+    pnl: f64,
     fee: f64,
     atr: Option<f64>,
 }
@@ -112,8 +112,8 @@ impl TradePosition {
             close_price: None,
             close_amount: None,
             amount: 0.0,
-            amount_in_anchor_token: 0.0,
-            pnl: None,
+            asset_in_usd: 0.0,
+            pnl: 0.0,
             fee: 0.0,
             atr,
         }
@@ -123,7 +123,7 @@ impl TradePosition {
         &mut self,
         average_open_price: f64,
         amount: f64,
-        amount_in_anchor_token: f64,
+        asset_in_usd: f64,
         fee: f64,
         take_profit_price: f64,
         cut_loss_price: f64,
@@ -137,7 +137,7 @@ impl TradePosition {
         self.open_time_str = self.open_time.to_datetime_string();
         self.average_open_price = average_open_price;
         self.amount = amount;
-        self.amount_in_anchor_token = amount_in_anchor_token;
+        self.asset_in_usd = asset_in_usd;
         self.fee = fee;
         self.take_profit_price = Some(take_profit_price);
         self.cut_loss_price = Some(cut_loss_price);
@@ -145,7 +145,7 @@ impl TradePosition {
 
         log::info!(
             "++ Opened a new position: {}",
-            self.format_position(Some(average_open_price))
+            self.format_position(average_open_price)
         );
 
         return Ok(());
@@ -217,7 +217,7 @@ impl TradePosition {
         take_profit_price: f64,
         cut_loss_price: f64,
         amount: f64,
-        amount_in_anchor_token: f64,
+        asset_in_usd: f64,
         fee: f64,
     ) {
         self.average_open_price = (self.average_open_price * self.amount
@@ -239,12 +239,12 @@ impl TradePosition {
         };
 
         self.amount += amount;
-        self.amount_in_anchor_token += amount_in_anchor_token;
+        self.asset_in_usd += asset_in_usd;
         self.fee += fee;
 
         log::info!(
             "+ Increase the position: {}",
-            self.format_position(Some(current_price))
+            self.format_position(current_price)
         );
     }
 
@@ -256,10 +256,8 @@ impl TradePosition {
 
         self.state = State::Closed(reason.to_owned());
         self.close_price = current_price;
-        self.pnl = self.calculate_pnl(current_price);
+        self.pnl -= self.fee;
         self.close_amount = Some(self.amount);
-        self.amount = 0.0;
-        self.amount_in_anchor_token = 0.0;
         self.close_time_str = DateTimeUtils::get_current_datetime_string();
 
         log::info!("-- Cloes the position: {}, pnl: {:.3?}", reason, self.pnl);
@@ -273,7 +271,7 @@ impl TradePosition {
         take_profit_price: f64,
         cut_loss_price: f64,
         amount: f64,
-        amount_in_anchor_token: f64,
+        asset_in_usd: f64,
         fee: f64,
     ) {
         self.open_time = chrono::Utc::now().timestamp();
@@ -286,13 +284,13 @@ impl TradePosition {
                 take_profit_price,
                 cut_loss_price,
                 amount,
-                amount_in_anchor_token,
+                asset_in_usd,
                 fee,
             );
         } else {
             self.fee += fee;
             self.amount -= amount;
-            self.amount_in_anchor_token -= amount_in_anchor_token;
+            self.asset_in_usd -= asset_in_usd;
 
             // Full close
             if self.amount == 0.0 {
@@ -303,8 +301,8 @@ impl TradePosition {
             else {
                 if self.amount < 0.0 {
                     self.amount *= -1.0;
-                    self.amount_in_anchor_token *= -1.0;
-                    self.average_open_price = self.amount_in_anchor_token / self.amount;
+                    self.asset_in_usd *= -1.0;
+                    self.average_open_price = self.asset_in_usd / self.amount;
                     self.position_type = self.position_type.opposite();
                     self.take_profit_price = Some(take_profit_price);
                     self.cut_loss_price = Some(cut_loss_price);
@@ -312,7 +310,7 @@ impl TradePosition {
 
                 log::info!(
                     "** Reduce the position: {}",
-                    self.format_position(Some(current_price))
+                    self.format_position(current_price)
                 );
             }
         }
@@ -352,20 +350,12 @@ impl TradePosition {
         None
     }
 
-    pub fn calculate_pnl(&self, current_price: Option<f64>) -> Option<f64> {
-        if let Some(price) = current_price {
-            Some(self.unrealized_pnl(price, self.amount) - self.fee)
-        } else {
-            None
-        }
+    pub fn unrealized_pnl(&self, current_price: f64) -> f64 {
+        self.amount * current_price + self.asset_in_usd
     }
 
-    fn unrealized_pnl(&self, current_price: f64, amount: f64) -> f64 {
-        if self.position_type == PositionType::Long {
-            (current_price - self.average_open_price) * amount
-        } else {
-            (self.average_open_price - current_price) * amount
-        }
+    pub fn pnl(&self) -> f64 {
+        self.pnl
     }
 
     pub fn id(&self) -> Option<u32> {
@@ -388,10 +378,6 @@ impl TradePosition {
         self.predicted_price
     }
 
-    pub fn pnl(&self) -> f64 {
-        self.pnl.unwrap_or_default()
-    }
-
     pub fn state(&self) -> State {
         self.state.clone()
     }
@@ -412,8 +398,8 @@ impl TradePosition {
         self.position_type.clone()
     }
 
-    pub fn amount_in_anchor_token(&self) -> f64 {
-        self.amount_in_anchor_token
+    pub fn asset_in_usd(&self) -> f64 {
+        self.asset_in_usd
     }
 
     fn should_take_profit(&self, close_price: f64) -> bool {
@@ -450,7 +436,7 @@ impl TradePosition {
         }
     }
 
-    fn format_position(&self, price: Option<f64>) -> String {
+    fn format_position(&self, price: f64) -> String {
         let id = match self.id {
             Some(id) => id,
             None => 0,
@@ -460,20 +446,20 @@ impl TradePosition {
             "ID:{} {:<6} pnl: {:3.3}, [{}] current: {:>6.3}, open: {:>6.3}, take: {:>6.3}, cut: {:>6.3}, amount: {:6.6}/{:6.6}",
             id,
             self.token_name,
-            self.calculate_pnl(price).unwrap_or(0.0),
+            self.unrealized_pnl(price),
             self.position_type,
-            price.unwrap_or_default(),
+            price,
             self.average_open_price,
             self.take_profit_price.unwrap_or_default(),
             self.cut_loss_price.unwrap_or_default(),
             self.amount,
-            self.amount_in_anchor_token
+            self.asset_in_usd
         )
     }
 
     pub fn print_info(&self, current_price: f64) {
         if self.amount != 0.0 {
-            log::debug!("{}", self.format_position(Some(current_price)));
+            log::debug!("{}", self.format_position(current_price));
         }
     }
 }
