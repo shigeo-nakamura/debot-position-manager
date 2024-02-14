@@ -217,15 +217,15 @@ impl TradePosition {
         match self.state() {
             State::Opening => {
                 if self.unfilled_amount == 0.0 {
-                    log::error!("close: Invalid state(1): {:?}", self);
+                    log::error!("request_close: Invalid state(1): {:?}", self);
                     return Err(());
                 }
             }
             State::Open => {
-                log::info!("close: reason = {}", reason.to_owned());
+                log::debug!("requeset_close: reason = {}", reason.to_owned());
             }
             _ => {
-                log::error!("close: Invalid state(2): {:?}", self);
+                log::error!("request_close: Invalid state(2): {:?}", self);
                 return Err(());
             }
         }
@@ -247,12 +247,11 @@ impl TradePosition {
             State::Closing(_) => {
                 self.state = State::Open;
                 self.ordered_time = chrono::Utc::now().timestamp();
-
                 log::info!("-- Cancled the closing order: {}", self.order_id);
                 Ok(false)
             }
             _ => {
-                log::error!("cancel: Invalid state: {}", self.state);
+                log::error!("cancel: Invalid state: {:?}", self);
                 Err(())
             }
         }
