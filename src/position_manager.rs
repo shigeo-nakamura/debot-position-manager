@@ -137,6 +137,7 @@ impl TradePosition {
         fee: f64,
         take_profit_price: Option<f64>,
         cut_loss_price: Option<f64>,
+        current_price: f64,
     ) -> Result<(), ()> {
         self.unfilled_amount -= amount;
 
@@ -166,6 +167,7 @@ impl TradePosition {
                 cut_loss_price,
                 amount,
                 asset_in_usd,
+                current_price,
             );
         } else {
             self.decrease(
@@ -175,6 +177,7 @@ impl TradePosition {
                 cut_loss_price,
                 amount,
                 asset_in_usd,
+                current_price,
             );
         }
 
@@ -265,6 +268,7 @@ impl TradePosition {
         cut_loss_price: Option<f64>,
         amount: f64,
         asset_in_usd: f64,
+        current_price: f64,
     ) {
         let current_amount = self.amount.abs();
 
@@ -298,7 +302,7 @@ impl TradePosition {
 
         log::info!(
             "+ Increase the position: {}",
-            self.format_position(filled_price)
+            self.format_position(current_price)
         );
     }
 
@@ -310,6 +314,7 @@ impl TradePosition {
         cut_loss_price: Option<f64>,
         amount: f64,
         asset_in_usd: f64,
+        current_price: f64,
     ) {
         match self.update_amount(position_type, amount, asset_in_usd, Some(filled_price)) {
             UpdateResult::Closed => {
@@ -329,7 +334,7 @@ impl TradePosition {
             UpdateResult::Decreaed => {
                 log::info!(
                     "** The position is decreased: {}",
-                    self.format_position(filled_price)
+                    self.format_position(current_price)
                 );
             }
         }
@@ -523,7 +528,7 @@ impl TradePosition {
         }
     }
 
-    fn format_position(&self, price: f64) -> String {
+    fn format_position(&self, current_price: f64) -> String {
         let id = match self.id {
             Some(id) => id,
             None => 0,
@@ -533,22 +538,23 @@ impl TradePosition {
         let take_profit_price = self.take_profit_price.unwrap_or_default();
         let cut_loss_price = self.cut_loss_price.unwrap_or_default();
 
-        let unrealized_pnl = self.unrealized_pnl(price, self.amount);
+        let unrealized_pnl = self.unrealized_pnl(current_price, self.amount);
 
         format!(
-            "ID:{} {:<6} un-pnl: {:3.3}({:.2}%), re-pnl: {:3.3}, [{}] open: {:>6.3}({:.3}), cut: {:>6.3}({:.3}), take: {:>6.3}({:.3}), amount: {:6.6}/{:6.6}",
+            "ID:{} {:<6} un-pnl: {:3.3}({:.2}%), re-pnl: {:3.3}, [{}] crreunt: {:>6.3} open: {:>6.3}({:.2}%), cut: {:>6.3}({:.2}%), take: {:>6.3}({:.2}%), amount: {:6.6}/{:6.6}",
             id,
             self.token_name,
             unrealized_pnl,
             unrealized_pnl / self.asset_in_usd.abs() * 100.0,
             self.pnl,
             self.position_type,
+            current_price,
             open_price,
-            open_price - price,
+            (open_price - current_price) / current_price * 100.0,
             cut_loss_price,
-            cut_loss_price - price,
+            (cut_loss_price - current_price) / current_price * 100.0,
             take_profit_price,
-            take_profit_price - price,
+            (take_profit_price - current_price) / current_price * 100.0,
             self.amount,
             self.asset_in_usd
         )
