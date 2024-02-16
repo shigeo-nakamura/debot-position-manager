@@ -533,11 +533,14 @@ impl TradePosition {
         let take_profit_price = self.take_profit_price.unwrap_or_default();
         let cut_loss_price = self.cut_loss_price.unwrap_or_default();
 
+        let unrealized_pnl = self.unrealized_pnl(price, self.amount);
+
         format!(
-            "ID:{} {:<6} un-pnl: {:3.3}, re-pnl: {:3.3}, [{}] open: {:>6.3}({:.3}), cut: {:>6.3}({:.3}), take: {:>6.3}({:.3}), amount: {:6.6}/{:6.6}",
+            "ID:{} {:<6} un-pnl: {:3.3}({:.2}%), re-pnl: {:3.3}, [{}] open: {:>6.3}({:.3}), cut: {:>6.3}({:.3}), take: {:>6.3}({:.3}), amount: {:6.6}/{:6.6}",
             id,
             self.token_name,
-            self.unrealized_pnl(price, self.amount),
+            unrealized_pnl,
+            unrealized_pnl / self.asset_in_usd.abs() * 100.0,
             self.pnl,
             self.position_type,
             open_price,
