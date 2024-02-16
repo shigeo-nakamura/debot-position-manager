@@ -298,7 +298,7 @@ impl TradePosition {
             None => None,
         };
 
-        self.update_amount(position_type, amount, asset_in_usd, None);
+        self.update_amount(position_type, amount, asset_in_usd);
 
         log::info!(
             "+ Increase the position: {}",
@@ -316,9 +316,8 @@ impl TradePosition {
         asset_in_usd: f64,
         current_price: f64,
     ) {
-        match self.update_amount(position_type, amount, asset_in_usd, Some(filled_price)) {
+        match self.update_amount_and_pnl(position_type, amount, asset_in_usd, filled_price) {
             UpdateResult::Closed => {
-                self.realize_pnl(self.asset_in_usd);
                 self.delete(filled_price, "CounterTrade");
             }
             UpdateResult::Inverted => {
@@ -349,7 +348,7 @@ impl TradePosition {
         self.state = State::Closed(reason.to_owned());
         self.close_asset_in_usd = self.asset_in_usd;
         self.close_price = close_price;
-        self.pnl += self.unrealized_pnl(close_price, self.amount);
+        self.pnl += Self::unrealized_pnl(close_price, self.amount, self.asset_in_usd);
         self.pnl -= self.fee;
         self.amount = 0.0;
         self.asset_in_usd = 0.0;
@@ -358,30 +357,53 @@ impl TradePosition {
         log::info!("-- Cloes the position: {}, pnl: {:.3?}", reason, self.pnl);
     }
 
-    fn update_amount(
+    fn update_amount_and_pnl(
         &mut self,
         position_type: PositionType,
         amount: f64,
         asset_in_usd: f64,
-        close_price: Option<f64>,
+        close_price: f64,
     ) -> UpdateResult {
-        let mut ret = UpdateResult::Decreaed;
+        let prev_asset_in_usd = self.asset_in_usd;
+        let prev_amount = self.amount;
 
-        if let Some(close_price) = close_price {
-            let prev_amount = self.amount;
-            let new_amount = if position_type == PositionType::Long {
-                prev_amount + amount
-            } else {
-                prev_amount - amount
-            };
+        self.update_amount(position_type, amount, asset_in_usd);
 
-            if prev_amount * new_amount < 0.0 {
-                let pnl = self.unrealized_pnl(close_price, prev_amount);
-                self.realize_pnl(pnl);
-                ret = UpdateResult::Inverted;
+        let update_result = if self.amount == 0.0 {
+            UpdateResult::Closed
+        } else if prev_amount.signum() != self.amount.signum() {
+            UpdateResult::Inverted
+        } else {
+            UpdateResult::Decreaed
+        };
+
+        let pnl = self.calculate_pnl_for_update(
+            &update_result,
+            prev_amount,
+            close_price,
+            prev_asset_in_usd,
+        );
+        self.realize_pnl(pnl);
+
+        update_result
+    }
+
+    fn calculate_pnl_for_update(
+        &self,
+        update_result: &UpdateResult,
+        prev_amount: f64,
+        close_price: f64,
+        prev_asset_in_usd: f64,
+    ) -> f64 {
+        match update_result {
+            UpdateResult::Decreaed => {
+                (close_price - self.average_open_price) * (prev_amount - self.amount)
             }
+            _ => Self::unrealized_pnl(close_price, prev_amount, prev_asset_in_usd),
         }
+    }
 
+    fn update_amount(&mut self, position_type: PositionType, amount: f64, asset_in_usd: f64) {
         if position_type == PositionType::Long {
             self.amount += amount;
             self.asset_in_usd -= asset_in_usd;
@@ -389,12 +411,6 @@ impl TradePosition {
             self.amount -= amount;
             self.asset_in_usd += asset_in_usd;
         }
-
-        if self.amount == 0.0 {
-            ret = UpdateResult::Closed;
-        }
-
-        ret
     }
 
     fn realize_pnl(&mut self, pnl: f64) {
@@ -402,8 +418,8 @@ impl TradePosition {
         self.asset_in_usd -= pnl;
     }
 
-    fn unrealized_pnl(&self, price: f64, amount: f64) -> f64 {
-        amount * price + self.asset_in_usd
+    fn unrealized_pnl(price: f64, amount: f64, asset_in_usd: f64) -> f64 {
+        amount * price + asset_in_usd
     }
 
     pub fn should_cancel_order(&self) -> bool {
@@ -538,10 +554,10 @@ impl TradePosition {
         let take_profit_price = self.take_profit_price.unwrap_or_default();
         let cut_loss_price = self.cut_loss_price.unwrap_or_default();
 
-        let unrealized_pnl = self.unrealized_pnl(current_price, self.amount);
+        let unrealized_pnl = Self::unrealized_pnl(current_price, self.amount, self.asset_in_usd);
 
         format!(
-            "ID:{} {:<6} un-pnl: {:3.3}({:.2}%), re-pnl: {:3.3}, [{}] crreunt: {:>6.3} open: {:>6.3}({:.2}%), cut: {:>6.3}({:.2}%), take: {:>6.3}({:.2}%), amount: {:6.6}/{:6.6}",
+            "ID:{} {:<6} un-pnl: {:3.3}({:.2}%), re-pnl: {:3.3}, [{}] current: {:>6.3} open: {:>6.3}({:.2}%), cut: {:>6.3}({:.2}%), take: {:>6.3}({:.2}%), amount: {:6.6}/{:6.6}",
             id,
             self.token_name,
             unrealized_pnl,
