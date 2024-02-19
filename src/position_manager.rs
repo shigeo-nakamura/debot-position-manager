@@ -139,20 +139,26 @@ impl TradePosition {
         cut_loss_price: Option<f64>,
         current_price: f64,
     ) -> Result<(), ()> {
-        self.unfilled_amount -= amount;
-
-        if self.unfilled_amount == 0.0 {
-            match self.state {
-                State::Opening => {
+        match self.state {
+            State::Opening => {
+                self.unfilled_amount -= amount;
+                if self.unfilled_amount == 0.0 {
                     self.state = State::Open;
                 }
-                State::Open | State::Closing(_) => {}
-                _ => {
-                    log::error!("on_filled: Invalid state: {}", self.state);
-                    return Err(());
-                }
+            }
+            State::Open | State::Closing(_) => {}
+            _ => {
+                log::error!("on_filled: Invalid state: {}", self.state);
+                return Err(());
             }
         }
+
+        log::trace!(
+            "state = {}, unfilled_amount = {}, amount = {}",
+            self.state,
+            self.unfilled_amount,
+            amount
+        );
 
         self.open_time = chrono::Utc::now().timestamp();
         self.open_time_str = self.open_time.to_datetime_string();
@@ -557,7 +563,7 @@ impl TradePosition {
         let unrealized_pnl = Self::unrealized_pnl(current_price, self.amount, self.asset_in_usd);
 
         format!(
-            "ID:{} {:<6} un-pnl: {:3.3}({:.2}%), re-pnl: {:3.3}, [{}] current: {:>6.3} open: {:>6.3}({:.2}%), cut: {:>6.3}({:.2}%), take: {:>6.3}({:.2}%), amount: {:6.6}/{:6.6}",
+            "ID:{} {:<6} un-pnl: {:3.3}({:.2}%), re-pnl: {:3.3}, [{}] current: {:>6.3} open: {:>6.3}({:.3}%), cut: {:>6.3}({:.3}%), take: {:>6.3}({:.3}%), amount: {:6.6}/{:6.6}",
             id,
             self.token_name,
             unrealized_pnl,
