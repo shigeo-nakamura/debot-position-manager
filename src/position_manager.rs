@@ -351,7 +351,12 @@ impl TradePosition {
             return;
         }
 
-        self.state = State::Closed(reason.to_owned());
+        if let State::Closing(closing_reason) = self.state.clone() {
+            self.state = State::Closed(closing_reason);
+        } else {
+            self.state = State::Closed(reason.to_owned());
+        }
+
         self.close_asset_in_usd = self.asset_in_usd;
         self.close_price = close_price;
         self.pnl += Self::unrealized_pnl(close_price, self.amount, self.asset_in_usd);
