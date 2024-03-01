@@ -568,9 +568,10 @@ impl TradePosition {
         let unrealized_pnl = Self::unrealized_pnl(current_price, self.amount, self.asset_in_usd);
 
         format!(
-            "ID:{} {:<6} un-pnl: {:3.3}({:.2}%), re-pnl: {:3.3}, [{}] current: {:>6.3} open: {:>6.3}({:.3}%), cut: {:>6.3}({:.3}%), take: {:>6.3}({:.3}%), amount: {:6.6}/{:6.6}",
+            "ID:{} {:<6}({}) un-pnl: {:3.3}({:.2}%), re-pnl: {:3.3}, [{}] price: {:>6.3}/{:>6.3}({:.3}%), cut: {:>6.3}({:.3}%), take: {:>6.3}({:.3}%), amount: {:6.6}({:6.6})/{:6.6}",
             id,
             self.token_name,
+            self.state,
             unrealized_pnl,
             unrealized_pnl / self.asset_in_usd.abs() * 100.0,
             self.pnl,
@@ -583,6 +584,7 @@ impl TradePosition {
             take_profit_price,
             (take_profit_price - current_price) / current_price * 100.0,
             self.amount,
+            self.unfilled_amount,
             self.asset_in_usd
         )
     }
