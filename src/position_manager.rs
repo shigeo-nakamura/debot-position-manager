@@ -1,8 +1,8 @@
+use crate::PositionType;
 use debot_utils::{DateTimeUtils, HasId, ToDateTimeString};
+use rust_decimal::{prelude::Signed, Decimal};
 use serde::{Deserialize, Serialize};
 use std::fmt;
-
-use crate::PositionType;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReasonForClose {
@@ -51,8 +51,8 @@ impl fmt::Display for State {
 pub struct TradePosition {
     id: Option<u32>,
     order_id: String,
-    ordered_price: f64,
-    unfilled_amount: f64,
+    ordered_price: Decimal,
+    unfilled_amount: Decimal,
     state: State,
     token_name: String,
     fund_name: String,
@@ -61,18 +61,18 @@ pub struct TradePosition {
     open_time: i64,
     open_time_str: String,
     close_time_str: String,
-    average_open_price: f64,
+    average_open_price: Decimal,
     position_type: PositionType,
-    predicted_price: f64,
-    take_profit_price: Option<f64>,
-    cut_loss_price: Option<f64>,
-    close_price: f64,
-    close_asset_in_usd: f64,
-    amount: f64,
-    asset_in_usd: f64,
-    pnl: f64,
-    fee: f64,
-    atr: Option<f64>,
+    predicted_price: Decimal,
+    take_profit_price: Option<Decimal>,
+    cut_loss_price: Option<Decimal>,
+    close_price: Decimal,
+    close_asset_in_usd: Decimal,
+    amount: Decimal,
+    asset_in_usd: Decimal,
+    pnl: Decimal,
+    fee: Decimal,
+    atr: Option<Decimal>,
 }
 
 impl HasId for TradePosition {
@@ -91,15 +91,16 @@ impl TradePosition {
     pub fn new(
         id: u32,
         order_id: &str,
-        ordered_price: f64,
-        ordered_amount: f64,
+        ordered_price: Decimal,
+        ordered_amount: Decimal,
         order_effective_duration: i64,
         token_name: &str,
         fund_name: &str,
         position_type: PositionType,
-        predicted_price: f64,
-        atr: Option<f64>,
+        predicted_price: Decimal,
+        atr: Option<Decimal>,
     ) -> Self {
+        let decimal_0 = Decimal::new(0, 0);
         Self {
             id: Some(id),
             order_id: order_id.to_owned(),
@@ -113,17 +114,17 @@ impl TradePosition {
             open_time: 0,
             open_time_str: String::new(),
             close_time_str: String::new(),
-            average_open_price: 0.0,
+            average_open_price: decimal_0,
             position_type,
             predicted_price,
             take_profit_price: None,
             cut_loss_price: None,
-            close_price: 0.0,
-            close_asset_in_usd: 0.0,
-            amount: 0.0,
-            asset_in_usd: 0.0,
-            pnl: 0.0,
-            fee: 0.0,
+            close_price: decimal_0,
+            close_asset_in_usd: decimal_0,
+            amount: decimal_0,
+            asset_in_usd: decimal_0,
+            pnl: decimal_0,
+            fee: decimal_0,
             atr,
         }
     }
@@ -131,18 +132,18 @@ impl TradePosition {
     pub fn on_filled(
         &mut self,
         position_type: PositionType,
-        filled_price: f64,
-        amount: f64,
-        asset_in_usd: f64,
-        fee: f64,
-        take_profit_price: Option<f64>,
-        cut_loss_price: Option<f64>,
-        current_price: f64,
+        filled_price: Decimal,
+        amount: Decimal,
+        asset_in_usd: Decimal,
+        fee: Decimal,
+        take_profit_price: Option<Decimal>,
+        cut_loss_price: Option<Decimal>,
+        current_price: Decimal,
     ) -> Result<(), ()> {
         match self.state {
             State::Opening => {
                 self.unfilled_amount -= amount;
-                if self.unfilled_amount == 0.0 {
+                if self.unfilled_amount.is_zero() {
                     self.state = State::Open;
                 }
             }
@@ -195,8 +196,8 @@ impl TradePosition {
 
     pub fn on_liquidated(
         &mut self,
-        close_price: f64,
-        fee: f64,
+        close_price: Decimal,
+        fee: Decimal,
         do_liquidate: bool,
         liquidated_reason: Option<String>,
     ) -> Result<(), ()> {
@@ -225,7 +226,7 @@ impl TradePosition {
     pub fn request_close(&mut self, order_id: &str, reason: &str) -> Result<(), ()> {
         match self.state() {
             State::Opening => {
-                if self.unfilled_amount == 0.0 {
+                if self.unfilled_amount.is_zero() {
                     log::error!("request_close: Invalid state(1): {:?}", self);
                     return Err(());
                 }
@@ -269,12 +270,12 @@ impl TradePosition {
     fn increase(
         &mut self,
         position_type: PositionType,
-        filled_price: f64,
-        take_profit_price: Option<f64>,
-        cut_loss_price: Option<f64>,
-        amount: f64,
-        asset_in_usd: f64,
-        current_price: f64,
+        filled_price: Decimal,
+        take_profit_price: Option<Decimal>,
+        cut_loss_price: Option<Decimal>,
+        amount: Decimal,
+        asset_in_usd: Decimal,
+        current_price: Decimal,
     ) {
         let current_amount = self.amount.abs();
 
@@ -315,12 +316,12 @@ impl TradePosition {
     fn decrease(
         &mut self,
         position_type: PositionType,
-        filled_price: f64,
-        take_profit_price: Option<f64>,
-        cut_loss_price: Option<f64>,
-        amount: f64,
-        asset_in_usd: f64,
-        current_price: f64,
+        filled_price: Decimal,
+        take_profit_price: Option<Decimal>,
+        cut_loss_price: Option<Decimal>,
+        amount: Decimal,
+        asset_in_usd: Decimal,
+        current_price: Decimal,
     ) {
         match self.update_amount_and_pnl(position_type, amount, asset_in_usd, filled_price) {
             UpdateResult::Closed => {
@@ -345,8 +346,8 @@ impl TradePosition {
         }
     }
 
-    fn delete(&mut self, close_price: f64, reason: &str) {
-        if self.state == State::Opening && self.amount == 0.0 {
+    fn delete(&mut self, close_price: Decimal, reason: &str) {
+        if self.state == State::Opening && self.amount.is_zero() {
             self.state = State::Canceled(reason.to_owned());
             return;
         }
@@ -361,8 +362,8 @@ impl TradePosition {
         self.close_price = close_price;
         self.pnl += Self::unrealized_pnl(close_price, self.amount, self.asset_in_usd);
         self.pnl -= self.fee;
-        self.amount = 0.0;
-        self.asset_in_usd = 0.0;
+        self.amount = Decimal::new(0, 0);
+        self.asset_in_usd = Decimal::new(0, 0);
         self.close_time_str = DateTimeUtils::get_current_datetime_string();
 
         log::info!("-- Cloes the position: {}, pnl: {:.3?}", reason, self.pnl);
@@ -371,16 +372,16 @@ impl TradePosition {
     fn update_amount_and_pnl(
         &mut self,
         position_type: PositionType,
-        amount: f64,
-        asset_in_usd: f64,
-        close_price: f64,
+        amount: Decimal,
+        asset_in_usd: Decimal,
+        close_price: Decimal,
     ) -> UpdateResult {
         let prev_asset_in_usd = self.asset_in_usd;
         let prev_amount = self.amount;
 
         self.update_amount(position_type, amount, asset_in_usd);
 
-        let update_result = if self.amount == 0.0 {
+        let update_result = if self.amount.is_zero() {
             UpdateResult::Closed
         } else if prev_amount.signum() != self.amount.signum() {
             UpdateResult::Inverted
@@ -402,10 +403,10 @@ impl TradePosition {
     fn calculate_pnl_for_update(
         &self,
         update_result: &UpdateResult,
-        prev_amount: f64,
-        close_price: f64,
-        prev_asset_in_usd: f64,
-    ) -> f64 {
+        prev_amount: Decimal,
+        close_price: Decimal,
+        prev_asset_in_usd: Decimal,
+    ) -> Decimal {
         match update_result {
             UpdateResult::Decreaed => {
                 (close_price - self.average_open_price) * (prev_amount - self.amount)
@@ -414,7 +415,12 @@ impl TradePosition {
         }
     }
 
-    fn update_amount(&mut self, position_type: PositionType, amount: f64, asset_in_usd: f64) {
+    fn update_amount(
+        &mut self,
+        position_type: PositionType,
+        amount: Decimal,
+        asset_in_usd: Decimal,
+    ) {
         if position_type == PositionType::Long {
             self.amount += amount;
             self.asset_in_usd -= asset_in_usd;
@@ -424,12 +430,12 @@ impl TradePosition {
         }
     }
 
-    fn realize_pnl(&mut self, pnl: f64) {
+    fn realize_pnl(&mut self, pnl: Decimal) {
         self.pnl += pnl;
         self.asset_in_usd -= pnl;
     }
 
-    fn unrealized_pnl(price: f64, amount: f64, asset_in_usd: f64) -> f64 {
+    fn unrealized_pnl(price: Decimal, amount: Decimal, asset_in_usd: Decimal) -> Decimal {
         amount * price + asset_in_usd
     }
 
@@ -444,7 +450,7 @@ impl TradePosition {
         }
     }
 
-    pub fn should_close(&self, close_price: f64) -> Option<ReasonForClose> {
+    pub fn should_close(&self, close_price: Decimal) -> Option<ReasonForClose> {
         if self.should_take_profit(close_price) {
             return Some(ReasonForClose::TakeProfit);
         }
@@ -465,7 +471,7 @@ impl TradePosition {
         None
     }
 
-    pub fn pnl(&self) -> f64 {
+    pub fn pnl(&self) -> Decimal {
         self.pnl
     }
 
@@ -473,7 +479,7 @@ impl TradePosition {
         self.id
     }
 
-    pub fn average_open_price(&self) -> f64 {
+    pub fn average_open_price(&self) -> Decimal {
         self.average_open_price
     }
 
@@ -481,11 +487,11 @@ impl TradePosition {
         &self.order_id
     }
 
-    pub fn ordered_price(&self) -> f64 {
+    pub fn ordered_price(&self) -> Decimal {
         self.ordered_price
     }
 
-    pub fn predicted_price(&self) -> f64 {
+    pub fn predicted_price(&self) -> Decimal {
         self.predicted_price
     }
 
@@ -501,11 +507,11 @@ impl TradePosition {
         &self.fund_name
     }
 
-    pub fn amount(&self) -> f64 {
+    pub fn amount(&self) -> Decimal {
         self.amount
     }
 
-    pub fn unfilled_amount(&self) -> f64 {
+    pub fn unfilled_amount(&self) -> Decimal {
         self.unfilled_amount
     }
 
@@ -513,15 +519,15 @@ impl TradePosition {
         self.position_type.clone()
     }
 
-    pub fn asset_in_usd(&self) -> f64 {
+    pub fn asset_in_usd(&self) -> Decimal {
         self.asset_in_usd
     }
 
-    pub fn close_asset_in_usd(&self) -> f64 {
+    pub fn close_asset_in_usd(&self) -> Decimal {
         self.close_asset_in_usd
     }
 
-    fn should_take_profit(&self, close_price: f64) -> bool {
+    fn should_take_profit(&self, close_price: Decimal) -> bool {
         if self.state != State::Open {
             return false;
         }
@@ -538,7 +544,7 @@ impl TradePosition {
         }
     }
 
-    fn should_cut_loss(&self, close_price: f64) -> bool {
+    fn should_cut_loss(&self, close_price: Decimal) -> bool {
         if self.state != State::Open {
             return false;
         }
@@ -555,7 +561,7 @@ impl TradePosition {
         }
     }
 
-    fn format_position(&self, current_price: f64) -> String {
+    fn format_position(&self, current_price: Decimal) -> String {
         let id = match self.id {
             Some(id) => id,
             None => 0,
@@ -566,6 +572,7 @@ impl TradePosition {
         let cut_loss_price = self.cut_loss_price.unwrap_or_default();
 
         let unrealized_pnl = Self::unrealized_pnl(current_price, self.amount, self.asset_in_usd);
+        let decimal_100 = Decimal::new(100, 0);
 
         format!(
             "ID:{} {:<6}({}) un-pnl: {:3.3}({:.2}%), re-pnl: {:3.3}, [{}] price: {:>6.3}/{:>6.3}({:.3}%), cut: {:>6.3}({:.3}%), take: {:>6.3}({:.3}%), amount: {:6.6}({:6.6})/{:6.6}",
@@ -573,24 +580,24 @@ impl TradePosition {
             self.token_name,
             self.state,
             unrealized_pnl,
-            unrealized_pnl / self.asset_in_usd.abs() * 100.0,
+            unrealized_pnl / self.asset_in_usd.abs() * decimal_100,
             self.pnl,
             self.position_type,
             current_price,
             open_price,
-            (open_price - current_price) / current_price * 100.0,
+            (open_price - current_price) / current_price * decimal_100,
             cut_loss_price,
-            (cut_loss_price - current_price) / current_price * 100.0,
+            (cut_loss_price - current_price) / current_price * decimal_100,
             take_profit_price,
-            (take_profit_price - current_price) / current_price * 100.0,
+            (take_profit_price - current_price) / current_price * decimal_100,
             self.amount,
             self.unfilled_amount,
             self.asset_in_usd
         )
     }
 
-    pub fn print_info(&self, current_price: f64) {
-        if self.amount != 0.0 {
+    pub fn print_info(&self, current_price: Decimal) {
+        if !self.amount.is_zero() {
             log::debug!("{}", self.format_position(current_price));
         }
     }
