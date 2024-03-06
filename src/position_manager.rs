@@ -250,9 +250,18 @@ impl TradePosition {
     pub fn cancel(&mut self) -> Result<bool, ()> {
         match self.state {
             State::Opening => {
-                self.state = State::Canceled(String::from("Not filled"));
-                log::debug!("-- Cancled the opening order: {}", self.order_id);
-                Ok(true)
+                if self.amount.is_zero() {
+                    self.state = State::Canceled(String::from("Not filled at all"));
+                    log::debug!("-- Cancled the opening order: {}", self.order_id);
+                    Ok(true)
+                } else {
+                    self.state = State::Open;
+                    log::debug!(
+                        "-- This opening order is partially filled: {}",
+                        self.order_id
+                    );
+                    Ok(false)
+                }
             }
             State::Closing(_) => {
                 self.state = State::Open;
