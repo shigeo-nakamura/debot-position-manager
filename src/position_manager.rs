@@ -87,6 +87,12 @@ enum UpdateResult {
     Inverted,
 }
 
+pub enum CancelResult {
+    OpeningCanceled,
+    ClosingCanceled,
+    PartiallyFilled,
+}
+
 impl TradePosition {
     pub fn new(
         id: u32,
@@ -247,27 +253,26 @@ impl TradePosition {
         return Ok(());
     }
 
-    pub fn cancel(&mut self) -> Result<bool, ()> {
+    pub fn cancel(&mut self) -> Result<CancelResult, ()> {
         match self.state {
             State::Opening => {
                 if self.amount.is_zero() {
                     self.state = State::Canceled(String::from("Not filled at all"));
                     log::debug!("-- Cancled the opening order: {}", self.order_id);
-                    Ok(true)
+                    Ok(CancelResult::OpeningCanceled)
                 } else {
                     self.state = State::Open;
                     log::debug!(
                         "-- This opening order is partially filled: {}",
                         self.order_id
                     );
-                    Ok(false)
+                    Ok(CancelResult::PartiallyFilled)
                 }
             }
             State::Closing(_) => {
                 self.state = State::Open;
-                self.ordered_time = chrono::Utc::now().timestamp();
                 log::info!("-- Cancled the closing order: {}", self.order_id);
-                Ok(false)
+                Ok(CancelResult::ClosingCanceled)
             }
             _ => {
                 log::error!("cancel: Invalid state: {:?}", self);
