@@ -541,6 +541,10 @@ impl TradePosition {
         self.close_asset_in_usd
     }
 
+    pub fn ignore(&mut self) {
+        self.state = State::Closed("Partially filled".to_owned());
+    }
+
     fn should_take_profit(&self, close_price: Decimal) -> bool {
         if self.state != State::Open {
             return false;
