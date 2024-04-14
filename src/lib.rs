@@ -9,8 +9,6 @@ pub enum PositionType {
     #[default]
     Long,
     Short,
-    HedgeLong,
-    HedgeShort,
 }
 
 impl fmt::Display for PositionType {
@@ -18,8 +16,6 @@ impl fmt::Display for PositionType {
         match self {
             PositionType::Long => write!(f, "Long"),
             PositionType::Short => write!(f, "Short"),
-            PositionType::HedgeLong => write!(f, "HedgeLong"),
-            PositionType::HedgeShort => write!(f, "HedgeShort"),
         }
     }
 }
@@ -29,8 +25,6 @@ impl PositionType {
         match self {
             PositionType::Long => PositionType::Short,
             PositionType::Short => PositionType::Long,
-            PositionType::HedgeLong => PositionType::HedgeShort,
-            PositionType::HedgeShort => PositionType::HedgeLong,
         }
     }
 }
