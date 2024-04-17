@@ -167,9 +167,6 @@ impl TradePosition {
             amount
         );
 
-        self.open_time = chrono::Utc::now().timestamp();
-        self.open_time_str = self.open_time.to_datetime_string();
-
         self.fee += fee;
 
         if self.position_type == position_type {
@@ -321,6 +318,8 @@ impl TradePosition {
 
         self.update_amount(position_type, amount, asset_in_usd);
 
+        self.set_open_time();
+
         log::info!(
             "+ Increase the position: {}",
             self.format_position(current_price)
@@ -340,6 +339,7 @@ impl TradePosition {
         match self.update_amount_and_pnl(position_type, amount, asset_in_usd, filled_price) {
             UpdateResult::Closed => {
                 self.delete(filled_price, "CounterTrade");
+                return;
             }
             UpdateResult::Inverted => {
                 self.average_open_price = filled_price;
@@ -358,6 +358,7 @@ impl TradePosition {
                 );
             }
         }
+        self.set_open_time();
     }
 
     fn delete(&mut self, close_price: Decimal, reason: &str) {
@@ -378,7 +379,8 @@ impl TradePosition {
         self.pnl -= self.fee;
         self.amount = Decimal::new(0, 0);
         self.asset_in_usd = Decimal::new(0, 0);
-        self.close_time_str = DateTimeUtils::get_current_datetime_string();
+
+        self.set_close_time();
 
         log::info!("-- Cloes the position: {}, pnl: {:.3?}", reason, self.pnl);
     }
@@ -577,6 +579,15 @@ impl TradePosition {
             }
             None => false,
         }
+    }
+
+    fn set_open_time(&mut self) {
+        self.open_time = chrono::Utc::now().timestamp();
+        self.open_time_str = self.open_time.to_datetime_string();
+    }
+
+    fn set_close_time(&mut self) {
+        self.close_time_str = DateTimeUtils::get_current_datetime_string();
     }
 
     fn format_position(&self, current_price: Decimal) -> String {
