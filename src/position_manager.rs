@@ -59,6 +59,7 @@ pub struct TradePosition {
     ordered_time: i64,
     order_effective_duration: i64,
     open_time: i64,
+    cancled_time: i64,
     open_time_str: String,
     close_time_str: String,
     average_open_price: Decimal,
@@ -118,6 +119,7 @@ impl TradePosition {
             fund_name: fund_name.to_owned(),
             ordered_time: chrono::Utc::now().timestamp(),
             open_time: 0,
+            cancled_time: 0,
             open_time_str: String::new(),
             close_time_str: String::new(),
             average_open_price: decimal_0,
@@ -147,7 +149,7 @@ impl TradePosition {
         current_price: Decimal,
     ) -> Result<(), ()> {
         match self.state {
-            State::Opening => {
+            State::Opening | State::Canceled(_) => {
                 self.unfilled_amount -= amount;
                 if self.unfilled_amount.is_zero() {
                     self.state = State::Open;
@@ -256,6 +258,7 @@ impl TradePosition {
                 if self.amount.is_zero() {
                     self.state = State::Canceled(String::from("Not filled at all"));
                     log::debug!("-- Cancled the opening order: {}", self.order_id);
+                    self.cancled_time = chrono::Utc::now().timestamp();
                     Ok(CancelResult::OpeningCanceled)
                 } else {
                     self.state = State::Open;
@@ -478,13 +481,14 @@ impl TradePosition {
         }
     }
 
-    pub fn is_expired(&self, max_holding_duration: i64) -> Option<ReasonForClose> {
-        let current_time = chrono::Utc::now().timestamp();
-        let holding_duration = current_time - self.open_time;
-        if holding_duration > max_holding_duration {
-            return Some(ReasonForClose::Expired);
+    pub fn is_cancel_expired(&self) -> bool {
+        if matches!(self.state, State::Canceled(_)) {
+            let current_time = chrono::Utc::now().timestamp();
+            let duration = current_time - self.cancled_time;
+            duration > self.order_effective_duration
+        } else {
+            false
         }
-        None
     }
 
     pub fn pnl(&self) -> Decimal {
