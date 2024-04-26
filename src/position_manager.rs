@@ -281,6 +281,11 @@ impl TradePosition {
         }
     }
 
+    pub fn ignore(&mut self) {
+        self.state = State::Canceled("Partially filled".to_owned());
+        self.cancled_time = chrono::Utc::now().timestamp();
+    }
+
     fn increase(
         &mut self,
         position_type: PositionType,
@@ -545,10 +550,6 @@ impl TradePosition {
 
     pub fn close_asset_in_usd(&self) -> Decimal {
         self.close_asset_in_usd
-    }
-
-    pub fn ignore(&mut self) {
-        self.state = State::Closed("Partially filled".to_owned());
     }
 
     fn should_take_profit(&self, close_price: Decimal) -> bool {
