@@ -489,8 +489,18 @@ impl TradePosition {
     pub fn is_cancel_expired(&self) -> bool {
         if matches!(self.state, State::Canceled(_)) {
             let current_time = chrono::Utc::now().timestamp();
-            let duration = current_time - self.cancled_time;
-            duration > self.order_effective_duration
+            let elapsed_time = current_time - self.cancled_time;
+            elapsed_time > self.order_effective_duration
+        } else {
+            false
+        }
+    }
+
+    pub fn is_open_long_enough(&self) -> bool {
+        if matches!(self.state, State::Open) {
+            let current_time = chrono::Utc::now().timestamp();
+            let elapsed_time = current_time - self.open_time;
+            elapsed_time > self.order_effective_duration
         } else {
             false
         }
