@@ -153,6 +153,7 @@ impl TradePosition {
                 self.unfilled_amount -= amount;
                 if self.unfilled_amount.is_zero() {
                     self.state = State::Open;
+                    self.set_open_time();
                 }
             }
             State::Open | State::Closing(_) => {}
@@ -262,6 +263,7 @@ impl TradePosition {
                     Ok(CancelResult::OpeningCanceled)
                 } else {
                     self.state = State::Open;
+                    self.set_open_time();
                     log::debug!(
                         "-- This opening order is partially filled: {}",
                         self.order_id
@@ -326,8 +328,6 @@ impl TradePosition {
 
         self.update_amount(position_type, amount, asset_in_usd);
 
-        self.set_open_time();
-
         log::info!(
             "+ Increase the position: {}",
             self.format_position(current_price)
@@ -366,7 +366,6 @@ impl TradePosition {
                 );
             }
         }
-        self.set_open_time();
     }
 
     fn delete(&mut self, close_price: Decimal, reason: &str) {
