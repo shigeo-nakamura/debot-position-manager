@@ -58,6 +58,7 @@ pub struct TradePosition {
     fund_name: String,
     ordered_time: i64,
     order_effective_duration: i64,
+    max_open_duration: i64,
     open_time: i64,
     cancled_time: i64,
     open_time_str: String,
@@ -106,6 +107,7 @@ impl TradePosition {
         ordered_price: Decimal,
         ordered_amount: Decimal,
         order_effective_duration: i64,
+        max_open_duration: i64,
         token_name: &str,
         fund_name: &str,
         position_type: PositionType,
@@ -119,6 +121,7 @@ impl TradePosition {
             ordered_price,
             unfilled_amount: ordered_amount,
             order_effective_duration,
+            max_open_duration,
             state: State::Opening,
             token_name: token_name.to_owned(),
             fund_name: fund_name.to_owned(),
@@ -507,6 +510,16 @@ impl TradePosition {
             let current_time = chrono::Utc::now().timestamp();
             let elapsed_time = current_time - self.open_time;
             elapsed_time > self.order_effective_duration
+        } else {
+            false
+        }
+    }
+
+    pub fn should_open_expired(&self) -> bool {
+        if matches!(self.state, State::Open) {
+            let current_time = chrono::Utc::now().timestamp();
+            let elapsed_time = current_time - self.open_time;
+            elapsed_time > self.max_open_duration
         } else {
             false
         }
