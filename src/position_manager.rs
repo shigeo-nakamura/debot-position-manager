@@ -94,6 +94,11 @@ pub enum CancelResult {
     PartiallyFilled,
 }
 
+pub enum OrderType {
+    OpenOrder,
+    CloseOrder,
+}
+
 impl TradePosition {
     pub fn new(
         id: u32,
@@ -462,13 +467,15 @@ impl TradePosition {
         amount * price + asset_in_usd
     }
 
-    pub fn should_cancel_order(&self) -> bool {
-        match self.state {
-            State::Opening | State::Closing(_) => {
-                let current_time = chrono::Utc::now().timestamp();
-                let ordering_duration = current_time - self.ordered_time;
-                ordering_duration > self.order_effective_duration
-            }
+    pub fn should_cancel_order(&self, order_type: Option<OrderType>) -> bool {
+        let current_time = chrono::Utc::now().timestamp();
+        let ordering_duration = current_time - self.ordered_time;
+
+        match (order_type, &self.state) {
+            (Some(OrderType::OpenOrder), &State::Opening)
+            | (Some(OrderType::CloseOrder), &State::Closing(_))
+            | (None, &State::Opening)
+            | (None, &State::Closing(_)) => ordering_duration > self.order_effective_duration,
             _ => false,
         }
     }
