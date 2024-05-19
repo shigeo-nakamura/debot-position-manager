@@ -1,5 +1,5 @@
 use crate::PositionType;
-use debot_utils::{DateTimeUtils, HasId, ToDateTimeString};
+use debot_utils::{get_local_time, HasId};
 use rust_decimal::{prelude::Signed, Decimal};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -616,12 +616,14 @@ impl TradePosition {
     }
 
     fn set_open_time(&mut self) {
-        self.open_time = chrono::Utc::now().timestamp();
-        self.open_time_str = self.open_time.to_datetime_string();
+        let (timestamp, time_str) = get_local_time();
+        self.open_time = timestamp;
+        self.open_time_str = time_str;
     }
 
     fn set_close_time(&mut self) {
-        self.close_time_str = DateTimeUtils::get_current_datetime_string();
+        let (_, time_str) = get_local_time();
+        self.close_time_str = time_str;
     }
 
     fn format_position(&self, current_price: Decimal) -> String {
