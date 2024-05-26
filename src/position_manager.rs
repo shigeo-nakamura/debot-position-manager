@@ -1,5 +1,5 @@
 use crate::PositionType;
-use debot_utils::{get_local_time, HasId};
+use debot_utils::get_local_time;
 use rust_decimal::{prelude::Signed, Decimal};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -49,13 +49,13 @@ impl fmt::Display for State {
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct TradePosition {
-    id: Option<u32>,
+    id: u32,
+    fund_name: String,
     order_id: String,
     ordered_price: Decimal,
     unfilled_amount: Decimal,
     state: State,
     token_name: String,
-    fund_name: String,
     ordered_time: i64,
     order_effective_duration: i64,
     max_open_duration: i64,
@@ -74,13 +74,15 @@ pub struct TradePosition {
     asset_in_usd: Decimal,
     pnl: Decimal,
     fee: Decimal,
-    atr: Option<Decimal>,
-}
-
-impl HasId for TradePosition {
-    fn id(&self) -> Option<u32> {
-        self.id
-    }
+    // for debug
+    price_variance: Decimal,
+    atr: Decimal,
+    adx: Decimal,
+    rsi: Decimal,
+    stochastic: Decimal,
+    macd: Decimal,
+    trend: Decimal,
+    take_profit_ratio: Decimal,
 }
 
 enum UpdateResult {
@@ -103,20 +105,28 @@ pub enum OrderType {
 impl TradePosition {
     pub fn new(
         id: u32,
+        fund_name: &str,
         order_id: &str,
         ordered_price: Decimal,
         ordered_amount: Decimal,
         order_effective_duration: i64,
         max_open_duration: i64,
         token_name: &str,
-        fund_name: &str,
         position_type: PositionType,
         predicted_price: Decimal,
-        atr: Option<Decimal>,
+        price_variance: Decimal,
+        atr: Decimal,
+        adx: Decimal,
+        rsi: Decimal,
+        stochastic: Decimal,
+        macd: Decimal,
+        trend: Decimal,
+        take_profit_ratio: Decimal,
     ) -> Self {
         let decimal_0 = Decimal::new(0, 0);
         Self {
-            id: Some(id),
+            id,
+            fund_name: fund_name.to_owned(),
             order_id: order_id.to_owned(),
             ordered_price,
             unfilled_amount: ordered_amount,
@@ -124,7 +134,6 @@ impl TradePosition {
             max_open_duration,
             state: State::Opening,
             token_name: token_name.to_owned(),
-            fund_name: fund_name.to_owned(),
             ordered_time: chrono::Utc::now().timestamp(),
             open_time: 0,
             cancled_time: 0,
@@ -142,6 +151,13 @@ impl TradePosition {
             pnl: decimal_0,
             fee: decimal_0,
             atr,
+            price_variance,
+            adx,
+            rsi,
+            macd,
+            trend,
+            take_profit_ratio,
+            stochastic,
         }
     }
 
@@ -529,8 +545,12 @@ impl TradePosition {
         self.pnl
     }
 
-    pub fn id(&self) -> Option<u32> {
+    pub fn id(&self) -> u32 {
         self.id
+    }
+
+    pub fn fund_name(&self) -> &str {
+        &self.fund_name
     }
 
     pub fn average_open_price(&self) -> Decimal {
@@ -557,10 +577,6 @@ impl TradePosition {
         &self.token_name
     }
 
-    pub fn fund_name(&self) -> &str {
-        &self.fund_name
-    }
-
     pub fn amount(&self) -> Decimal {
         self.amount
     }
@@ -579,6 +595,54 @@ impl TradePosition {
 
     pub fn close_asset_in_usd(&self) -> Decimal {
         self.close_asset_in_usd
+    }
+
+    pub fn open_time_str(&self) -> &str {
+        &self.open_time_str
+    }
+
+    pub fn close_time_str(&self) -> &str {
+        &self.close_time_str
+    }
+
+    pub fn close_price(&self) -> Decimal {
+        self.close_price
+    }
+
+    pub fn rsi(&self) -> Decimal {
+        self.rsi
+    }
+
+    pub fn atr(&self) -> Decimal {
+        self.atr
+    }
+
+    pub fn adx(&self) -> Decimal {
+        self.adx
+    }
+
+    pub fn stochastic(&self) -> Decimal {
+        self.stochastic
+    }
+
+    pub fn macd(&self) -> Decimal {
+        self.macd
+    }
+
+    pub fn trend(&self) -> Decimal {
+        self.trend
+    }
+
+    pub fn take_profit_ratio(&self) -> Decimal {
+        self.take_profit_ratio
+    }
+
+    pub fn price_variance(&self) -> Decimal {
+        self.price_variance
+    }
+
+    pub fn fee(&self) -> Decimal {
+        self.fee
     }
 
     fn should_take_profit(&self, close_price: Decimal) -> bool {
@@ -627,11 +691,6 @@ impl TradePosition {
     }
 
     fn format_position(&self, current_price: Decimal) -> String {
-        let id = match self.id {
-            Some(id) => id,
-            None => 0,
-        };
-
         let open_price = self.average_open_price;
         let take_profit_price = self.take_profit_price.unwrap_or_default();
         let cut_loss_price = self.cut_loss_price.unwrap_or_default();
@@ -641,7 +700,7 @@ impl TradePosition {
 
         format!(
             "ID:{} {:<6}({}) un-pnl: {:3.3}({:.2}%), re-pnl: {:3.3}, [{}] price: {:>6.3}/{:>6.3}({:.3}%), cut: {:>6.3}({:.3}%), take: {:>6.3}({:.3}%), amount: {:6.6}({:6.6})/{:6.6}",
-            id,
+            self.id,
             self.token_name,
             self.state,
             unrealized_pnl,
