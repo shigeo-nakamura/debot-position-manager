@@ -83,6 +83,7 @@ pub struct TradePosition {
     macd: Decimal,
     trend: Decimal,
     take_profit_ratio: Decimal,
+    atr_spread: Decimal,
 }
 
 enum UpdateResult {
@@ -122,6 +123,7 @@ impl TradePosition {
         macd: Decimal,
         trend: Decimal,
         take_profit_ratio: Decimal,
+        atr_spread: Decimal,
     ) -> Self {
         let decimal_0 = Decimal::new(0, 0);
         Self {
@@ -158,6 +160,7 @@ impl TradePosition {
             trend,
             take_profit_ratio,
             stochastic,
+            atr_spread,
         }
     }
 
@@ -639,6 +642,10 @@ impl TradePosition {
 
     pub fn price_variance(&self) -> Decimal {
         self.price_variance
+    }
+
+    pub fn atr_spread(&self) -> Decimal {
+        self.atr_spread
     }
 
     pub fn fee(&self) -> Decimal {
