@@ -76,12 +76,11 @@ pub struct TradePosition {
     fee: Decimal,
     // for debug
     price_variance: Decimal,
-    atr: Decimal,
-    adx: Decimal,
-    rsi: Decimal,
-    stochastic: Decimal,
-    macd: Decimal,
-    trend: Decimal,
+    atr: (Decimal, Decimal, Decimal),
+    adx: (Decimal, Decimal, Decimal),
+    rsi: (Decimal, Decimal, Decimal),
+    stochastic: (Decimal, Decimal, Decimal),
+    macd: (Decimal, Decimal, Decimal),
     take_profit_ratio: Decimal,
     atr_spread: Decimal,
 }
@@ -116,12 +115,11 @@ impl TradePosition {
         position_type: PositionType,
         predicted_price: Decimal,
         price_variance: Decimal,
-        atr: Decimal,
-        adx: Decimal,
-        rsi: Decimal,
-        stochastic: Decimal,
-        macd: Decimal,
-        trend: Decimal,
+        atr: (Decimal, Decimal, Decimal),
+        adx: (Decimal, Decimal, Decimal),
+        rsi: (Decimal, Decimal, Decimal),
+        stochastic: (Decimal, Decimal, Decimal),
+        macd: (Decimal, Decimal, Decimal),
         take_profit_ratio: Decimal,
         atr_spread: Decimal,
     ) -> Self {
@@ -157,7 +155,6 @@ impl TradePosition {
             adx,
             rsi,
             macd,
-            trend,
             take_profit_ratio,
             stochastic,
             atr_spread,
@@ -612,28 +609,24 @@ impl TradePosition {
         self.close_price
     }
 
-    pub fn rsi(&self) -> Decimal {
+    pub fn rsi(&self) -> (Decimal, Decimal, Decimal) {
         self.rsi
     }
 
-    pub fn atr(&self) -> Decimal {
+    pub fn atr(&self) -> (Decimal, Decimal, Decimal) {
         self.atr
     }
 
-    pub fn adx(&self) -> Decimal {
+    pub fn adx(&self) -> (Decimal, Decimal, Decimal) {
         self.adx
     }
 
-    pub fn stochastic(&self) -> Decimal {
+    pub fn stochastic(&self) -> (Decimal, Decimal, Decimal) {
         self.stochastic
     }
 
-    pub fn macd(&self) -> Decimal {
+    pub fn macd(&self) -> (Decimal, Decimal, Decimal) {
         self.macd
-    }
-
-    pub fn trend(&self) -> Decimal {
-        self.trend
     }
 
     pub fn take_profit_ratio(&self) -> Decimal {
