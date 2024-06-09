@@ -80,7 +80,7 @@ pub struct TradePosition {
     adx: (Decimal, Decimal, Decimal),
     rsi: (Decimal, Decimal, Decimal),
     stochastic: (Decimal, Decimal, Decimal),
-    macd: (Decimal, Decimal, Decimal),
+    macd: Decimal,
     take_profit_ratio: Decimal,
     atr_spread: Decimal,
 }
@@ -119,7 +119,7 @@ impl TradePosition {
         adx: (Decimal, Decimal, Decimal),
         rsi: (Decimal, Decimal, Decimal),
         stochastic: (Decimal, Decimal, Decimal),
-        macd: (Decimal, Decimal, Decimal),
+        macd: Decimal,
         take_profit_ratio: Decimal,
         atr_spread: Decimal,
     ) -> Self {
@@ -625,7 +625,7 @@ impl TradePosition {
         self.stochastic
     }
 
-    pub fn macd(&self) -> (Decimal, Decimal, Decimal) {
+    pub fn macd(&self) -> Decimal {
         self.macd
     }
 
