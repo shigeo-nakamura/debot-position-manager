@@ -645,6 +645,10 @@ impl TradePosition {
         self.fee
     }
 
+    pub fn max_open_duration(&self) -> i64 {
+        self.max_open_duration
+    }
+
     fn should_take_profit(&self, close_price: Decimal) -> bool {
         if self.state != State::Open {
             return false;
