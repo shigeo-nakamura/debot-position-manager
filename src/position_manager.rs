@@ -76,11 +76,11 @@ pub struct TradePosition {
     fee: Decimal,
     // for debug
     price_variance: Decimal,
-    atr: (Decimal, Decimal, Decimal),
-    adx: (Decimal, Decimal, Decimal),
-    rsi: (Decimal, Decimal, Decimal),
-    stochastic: (Decimal, Decimal, Decimal),
-    macd: Decimal,
+    atr: (Decimal, Decimal, Decimal, Decimal),
+    adx: (Decimal, Decimal, Decimal, Decimal),
+    rsi: (Decimal, Decimal, Decimal, Decimal),
+    stochastic: (Decimal, Decimal, Decimal, Decimal),
+    price: (Decimal, Decimal, Decimal, Decimal),
     take_profit_ratio: Decimal,
     atr_spread: Decimal,
     risk_reward: Decimal,
@@ -116,11 +116,11 @@ impl TradePosition {
         position_type: PositionType,
         predicted_price: Decimal,
         price_variance: Decimal,
-        atr: (Decimal, Decimal, Decimal),
-        adx: (Decimal, Decimal, Decimal),
-        rsi: (Decimal, Decimal, Decimal),
-        stochastic: (Decimal, Decimal, Decimal),
-        macd: Decimal,
+        atr: (Decimal, Decimal, Decimal, Decimal),
+        adx: (Decimal, Decimal, Decimal, Decimal),
+        rsi: (Decimal, Decimal, Decimal, Decimal),
+        stochastic: (Decimal, Decimal, Decimal, Decimal),
+        price: (Decimal, Decimal, Decimal, Decimal),
         take_profit_ratio: Decimal,
         atr_spread: Decimal,
         risk_reward: Decimal,
@@ -156,7 +156,7 @@ impl TradePosition {
             price_variance,
             adx,
             rsi,
-            macd,
+            price,
             take_profit_ratio,
             stochastic,
             atr_spread,
@@ -612,24 +612,24 @@ impl TradePosition {
         self.close_price
     }
 
-    pub fn rsi(&self) -> (Decimal, Decimal, Decimal) {
+    pub fn rsi(&self) -> (Decimal, Decimal, Decimal, Decimal) {
         self.rsi
     }
 
-    pub fn atr(&self) -> (Decimal, Decimal, Decimal) {
+    pub fn atr(&self) -> (Decimal, Decimal, Decimal, Decimal) {
         self.atr
     }
 
-    pub fn adx(&self) -> (Decimal, Decimal, Decimal) {
+    pub fn adx(&self) -> (Decimal, Decimal, Decimal, Decimal) {
         self.adx
     }
 
-    pub fn stochastic(&self) -> (Decimal, Decimal, Decimal) {
+    pub fn stochastic(&self) -> (Decimal, Decimal, Decimal, Decimal) {
         self.stochastic
     }
 
-    pub fn macd(&self) -> Decimal {
-        self.macd
+    pub fn price(&self) -> (Decimal, Decimal, Decimal, Decimal) {
+        self.price
     }
 
     pub fn take_profit_ratio(&self) -> Decimal {
