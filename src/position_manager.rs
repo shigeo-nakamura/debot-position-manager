@@ -84,6 +84,7 @@ pub struct TradePosition {
     take_profit_ratio: Decimal,
     atr_spread: Decimal,
     risk_reward: Decimal,
+    pnl_ratio: Decimal,
 }
 
 enum UpdateResult {
@@ -124,6 +125,7 @@ impl TradePosition {
         take_profit_ratio: Decimal,
         atr_spread: Decimal,
         risk_reward: Decimal,
+        pnl_ratio: Decimal,
     ) -> Self {
         let decimal_0 = Decimal::new(0, 0);
         Self {
@@ -161,6 +163,7 @@ impl TradePosition {
             stochastic,
             atr_spread,
             risk_reward,
+            pnl_ratio,
         }
     }
 
@@ -654,6 +657,10 @@ impl TradePosition {
 
     pub fn max_open_duration(&self) -> i64 {
         self.max_open_duration
+    }
+
+    pub fn pnl_ratio(&self) -> Decimal {
+        self.pnl_ratio
     }
 
     fn should_take_profit(&self, close_price: Decimal) -> bool {
