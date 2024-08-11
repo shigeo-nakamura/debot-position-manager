@@ -57,7 +57,8 @@ pub struct TradePosition {
     state: State,
     token_name: String,
     ordered_time: i64,
-    order_effective_duration: i64,
+    open_order_effective_duration: i64,
+    close_order_effective_duration: i64,
     max_open_duration: i64,
     open_time: i64,
     cancled_time: i64,
@@ -111,7 +112,8 @@ impl TradePosition {
         order_id: &str,
         ordered_price: Decimal,
         ordered_amount: Decimal,
-        order_effective_duration: i64,
+        open_order_effective_duration: i64,
+        close_order_effective_duration: i64,
         max_open_duration: i64,
         token_name: &str,
         position_type: PositionType,
@@ -134,7 +136,8 @@ impl TradePosition {
             order_id: order_id.to_owned(),
             ordered_price,
             unfilled_amount: ordered_amount,
-            order_effective_duration,
+            open_order_effective_duration,
+            close_order_effective_duration,
             max_open_duration,
             state: State::Opening,
             token_name: token_name.to_owned(),
@@ -492,15 +495,13 @@ impl TradePosition {
         amount * price + asset_in_usd
     }
 
-    pub fn should_cancel_order(&self, order_type: Option<OrderType>) -> bool {
+    pub fn should_cancel_order(&self) -> bool {
         let current_time = chrono::Utc::now().timestamp();
         let ordering_duration = current_time - self.ordered_time;
 
-        match (order_type, &self.state) {
-            (Some(OrderType::OpenOrder), &State::Opening)
-            | (Some(OrderType::CloseOrder), &State::Closing(_))
-            | (None, &State::Opening)
-            | (None, &State::Closing(_)) => ordering_duration > self.order_effective_duration,
+        match self.state {
+            State::Opening => ordering_duration > self.open_order_effective_duration,
+            State::Closing(_) => ordering_duration > self.close_order_effective_duration,
             _ => false,
         }
     }
@@ -521,17 +522,7 @@ impl TradePosition {
         if matches!(self.state, State::Canceled(_)) {
             let current_time = chrono::Utc::now().timestamp();
             let elapsed_time = current_time - self.cancled_time;
-            elapsed_time > self.order_effective_duration
-        } else {
-            false
-        }
-    }
-
-    pub fn is_open_long_enough(&self) -> bool {
-        if matches!(self.state, State::Open) {
-            let current_time = chrono::Utc::now().timestamp();
-            let elapsed_time = current_time - self.open_time;
-            elapsed_time > self.order_effective_duration
+            elapsed_time > self.close_order_effective_duration
         } else {
             false
         }
