@@ -81,6 +81,7 @@ pub struct TradePosition {
     rsi: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
     stochastic: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
     price: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
+    candle_pattern: [f64; 16],
     take_profit_ratio: Decimal,
     atr_spread: Decimal,
     risk_reward: Decimal,
@@ -121,6 +122,7 @@ impl TradePosition {
         rsi: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
         stochastic: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
         price: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
+        candle_pattern: [f64; 16],
         take_profit_ratio: Decimal,
         atr_spread: Decimal,
         risk_reward: Decimal,
@@ -157,6 +159,7 @@ impl TradePosition {
             adx,
             rsi,
             price,
+            candle_pattern,
             take_profit_ratio,
             stochastic,
             atr_spread,
@@ -618,6 +621,10 @@ impl TradePosition {
 
     pub fn price(&self) -> (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal) {
         self.price
+    }
+
+    pub fn candle_pattern(&self) -> [f64; 16] {
+        self.candle_pattern
     }
 
     pub fn take_profit_ratio(&self) -> Decimal {
