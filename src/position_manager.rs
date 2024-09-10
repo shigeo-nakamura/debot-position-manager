@@ -56,12 +56,10 @@ pub struct TradePosition {
     unfilled_amount: Decimal,
     state: State,
     token_name: String,
-    ordered_time: i64,
-    open_order_effective_duration: i64,
-    close_order_effective_duration: i64,
-    max_open_duration: i64,
-    open_time: i64,
-    cancled_time: i64,
+    tick_count: u32,
+    open_order_tick_count_max: u32,
+    close_order_tick_count_max: u32,
+    open_tick_count_max: u32,
     open_time_str: String,
     close_time_str: String,
     average_open_price: Decimal,
@@ -111,9 +109,9 @@ impl TradePosition {
         order_id: &str,
         ordered_price: Decimal,
         ordered_amount: Decimal,
-        open_order_effective_duration: i64,
-        close_order_effective_duration: i64,
-        max_open_duration: i64,
+        open_order_tick_count_max: u32,
+        close_order_tick_count_max: u32,
+        open_tick_count_max: u32,
         token_name: &str,
         position_type: PositionType,
         predicted_price: Decimal,
@@ -134,14 +132,12 @@ impl TradePosition {
             order_id: order_id.to_owned(),
             ordered_price,
             unfilled_amount: ordered_amount,
-            open_order_effective_duration,
-            close_order_effective_duration,
-            max_open_duration,
+            tick_count: 0,
+            open_order_tick_count_max,
+            close_order_tick_count_max,
+            open_tick_count_max,
             state: State::Opening,
             token_name: token_name.to_owned(),
-            ordered_time: chrono::Utc::now().timestamp(),
-            open_time: 0,
-            cancled_time: 0,
             open_time_str: String::new(),
             close_time_str: String::new(),
             average_open_price: decimal_0,
@@ -182,8 +178,7 @@ impl TradePosition {
             State::Opening | State::Canceled(_) => {
                 self.unfilled_amount -= amount;
                 if self.unfilled_amount.is_zero() {
-                    self.state = State::Open;
-                    self.set_open_time();
+                    self.update_state(State::Open)
                 }
             }
             State::Open | State::Closing(_) => {}
@@ -277,8 +272,7 @@ impl TradePosition {
         }
 
         self.order_id = order_id.to_owned();
-        self.ordered_time = chrono::Utc::now().timestamp();
-        self.state = State::Closing(reason.to_owned());
+        self.update_state(State::Closing(reason.to_owned()));
 
         return Ok(());
     }
@@ -287,13 +281,11 @@ impl TradePosition {
         match self.state {
             State::Opening => {
                 if self.amount.is_zero() {
-                    self.state = State::Canceled(String::from("Not filled at all"));
-                    log::debug!("-- Cancled the opening order: {}", self.order_id);
-                    self.cancled_time = chrono::Utc::now().timestamp();
+                    self.update_state(State::Canceled(String::from("Not filled at all")));
+                    log::debug!("-- Canceled the opening order: {}", self.order_id);
                     Ok(CancelResult::OpeningCanceled)
                 } else {
-                    self.state = State::Open;
-                    self.set_open_time();
+                    self.update_state(State::Open);
                     log::debug!(
                         "-- This opening order is partially filled: {}",
                         self.order_id
@@ -302,8 +294,8 @@ impl TradePosition {
                 }
             }
             State::Closing(_) => {
-                self.state = State::Open;
-                log::info!("-- Cancled the closing order: {}", self.order_id);
+                self.update_state(State::Open);
+                log::info!("-- Canceling the closing order: {}", self.order_id);
                 Ok(CancelResult::ClosingCanceled)
             }
             _ => {
@@ -314,8 +306,7 @@ impl TradePosition {
     }
 
     pub fn ignore(&mut self) {
-        self.state = State::Canceled("Partially filled".to_owned());
-        self.cancled_time = chrono::Utc::now().timestamp();
+        self.update_state(State::Canceled("Partially filled".to_owned()));
     }
 
     fn increase(
@@ -400,14 +391,14 @@ impl TradePosition {
 
     fn delete(&mut self, close_price: Decimal, reason: &str) {
         if self.state == State::Opening && self.amount.is_zero() {
-            self.state = State::Canceled(reason.to_owned());
+            self.update_state(State::Canceled(reason.to_owned()));
             return;
         }
 
         if let State::Closing(closing_reason) = self.state.clone() {
-            self.state = State::Closed(closing_reason);
+            self.update_state(State::Closed(closing_reason));
         } else {
-            self.state = State::Closed(reason.to_owned());
+            self.update_state(State::Closed(reason.to_owned()));
         }
 
         self.close_asset_in_usd = self.asset_in_usd;
@@ -417,9 +408,29 @@ impl TradePosition {
         self.amount = Decimal::new(0, 0);
         self.asset_in_usd = Decimal::new(0, 0);
 
-        self.set_close_time();
-
         log::info!("-- Cloes the position: {}, pnl: {:.3?}", reason, self.pnl);
+    }
+
+    fn update_state(&mut self, new_state: State) {
+        assert!(new_state != self.state, "The same state: {:?}", new_state);
+
+        match new_state {
+            State::Closing(_) | State::Canceled(_) => self.tick_count = 0,
+            State::Open => match self.state {
+                State::Opening | State::Canceled(_) => {
+                    self.tick_count = 0;
+                    self.set_open_time();
+                }
+                State::Closing(_) => self.tick_count = self.open_tick_count_max,
+                _ => {}
+            },
+            State::Closed(_) => {
+                self.set_close_time();
+            }
+            _ => {}
+        }
+
+        self.state = new_state
     }
 
     fn update_amount_and_pnl(
@@ -493,14 +504,15 @@ impl TradePosition {
     }
 
     pub fn should_cancel_order(&self) -> bool {
-        let current_time = chrono::Utc::now().timestamp();
-        let ordering_duration = current_time - self.ordered_time;
-
         match self.state {
-            State::Opening => ordering_duration > self.open_order_effective_duration,
-            State::Closing(_) => ordering_duration > self.close_order_effective_duration,
+            State::Opening => self.tick_count > self.open_order_tick_count_max,
+            State::Closing(_) => self.tick_count > self.close_order_tick_count_max,
             _ => false,
         }
+    }
+
+    pub fn update_counter(&mut self) {
+        self.tick_count += 1;
     }
 
     pub fn should_close(&self, close_price: Decimal) -> Option<ReasonForClose> {
@@ -517,9 +529,7 @@ impl TradePosition {
 
     pub fn is_cancel_expired(&self) -> bool {
         if matches!(self.state, State::Canceled(_)) {
-            let current_time = chrono::Utc::now().timestamp();
-            let elapsed_time = current_time - self.cancled_time;
-            elapsed_time > self.close_order_effective_duration
+            self.tick_count > self.close_order_tick_count_max
         } else {
             false
         }
@@ -527,9 +537,7 @@ impl TradePosition {
 
     pub fn should_open_expired(&self) -> bool {
         if matches!(self.state, State::Open) {
-            let current_time = chrono::Utc::now().timestamp();
-            let elapsed_time = current_time - self.open_time;
-            elapsed_time > self.max_open_duration
+            self.tick_count > self.open_tick_count_max
         } else {
             false
         }
@@ -643,8 +651,8 @@ impl TradePosition {
         self.fee
     }
 
-    pub fn max_open_duration(&self) -> i64 {
-        self.max_open_duration
+    pub fn open_tick_count_max(&self) -> u32 {
+        self.open_tick_count_max
     }
 
     fn should_take_profit(&self, close_price: Decimal) -> bool {
@@ -682,8 +690,7 @@ impl TradePosition {
     }
 
     fn set_open_time(&mut self) {
-        let (timestamp, time_str) = get_local_time();
-        self.open_time = timestamp;
+        let (_, time_str) = get_local_time();
         self.open_time_str = time_str;
     }
 
