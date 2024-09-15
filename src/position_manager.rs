@@ -1,4 +1,5 @@
 use crate::PositionType;
+use debot_db::CandlePattern;
 use debot_utils::get_local_time;
 use rust_decimal::{prelude::Signed, Decimal};
 use serde::{Deserialize, Serialize};
@@ -79,7 +80,7 @@ pub struct TradePosition {
     rsi: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
     stochastic: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
     price: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
-    candle_pattern: ([Decimal; 16], [Decimal; 16]),
+    candle_pattern: (CandlePattern, CandlePattern, CandlePattern, CandlePattern),
     take_profit_ratio: Decimal,
     atr_spread: Decimal,
     risk_reward: Decimal,
@@ -121,7 +122,7 @@ impl TradePosition {
         rsi: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
         stochastic: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
         price: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
-        candle_pattern: ([Decimal; 16], [Decimal; 16]),
+        candle_pattern: (CandlePattern, CandlePattern, CandlePattern, CandlePattern),
         take_profit_ratio: Decimal,
         atr_spread: Decimal,
         risk_reward: Decimal,
@@ -634,7 +635,7 @@ impl TradePosition {
         self.price
     }
 
-    pub fn candle_pattern(&self) -> ([Decimal; 16], [Decimal; 16]) {
+    pub fn candle_pattern(&self) -> (CandlePattern, CandlePattern, CandlePattern, CandlePattern) {
         self.candle_pattern
     }
 
