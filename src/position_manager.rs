@@ -63,6 +63,7 @@ pub struct TradePosition {
     close_order_tick_count_max: u32,
     open_tick_count_max: u32,
     open_time_str: String,
+    open_timestamp: i64,
     close_time_str: String,
     average_open_price: Decimal,
     position_type: PositionType,
@@ -144,6 +145,7 @@ impl TradePosition {
             state: State::Opening,
             token_name: token_name.to_owned(),
             open_time_str: String::new(),
+            open_timestamp: 0,
             close_time_str: String::new(),
             average_open_price: decimal_0,
             position_type,
@@ -609,6 +611,10 @@ impl TradePosition {
         self.close_asset_in_usd
     }
 
+    pub fn open_timestamp(&self) -> i64 {
+        self.open_timestamp
+    }
+
     pub fn open_time_str(&self) -> &str {
         &self.open_time_str
     }
@@ -704,7 +710,8 @@ impl TradePosition {
     }
 
     fn set_open_time(&mut self) {
-        let (_, time_str) = get_local_time();
+        let (timestamp, time_str) = get_local_time();
+        self.open_timestamp = timestamp;
         self.open_time_str = time_str;
     }
 
