@@ -87,6 +87,8 @@ pub struct TradePosition {
     atr_spread: Decimal,
     risk_reward: Decimal,
     atr_term: Decimal,
+    last_volume: Option<Decimal>,
+    last_num_trades: Option<u64>,
 }
 
 enum UpdateResult {
@@ -129,6 +131,8 @@ impl TradePosition {
         atr_spread: Decimal,
         risk_reward: Decimal,
         atr_term: Decimal,
+        last_volume: Option<Decimal>,
+        last_num_trades: Option<u64>,
     ) -> Self {
         let decimal_0 = Decimal::new(0, 0);
         Self {
@@ -168,6 +172,8 @@ impl TradePosition {
             atr_spread,
             risk_reward,
             atr_term,
+            last_volume,
+            last_num_trades,
         }
     }
 
@@ -625,6 +631,14 @@ impl TradePosition {
 
     pub fn close_price(&self) -> Decimal {
         self.close_price
+    }
+
+    pub fn last_volume(&self) -> Option<Decimal> {
+        self.last_volume
+    }
+
+    pub fn last_num_trades(&self) -> Option<u64> {
+        self.last_num_trades
     }
 
     pub fn rsi(&self) -> (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal) {
