@@ -1,6 +1,6 @@
 [package]
 name = "debot-position-manager"
-version = "1.4.9"
+version = "1.4.11"
 authors = ["Shigeo NAKAMURA <nakamura_shigeo@yahoo.com>"]
 edition = "2021"
 description = "Functions to manage trade positions"
@@ -16,4 +16,4 @@ chrono = "0.4.24"
 rust_decimal = { version = "1.0", features = ["serde"] }
 
 debot-utils ="1.0.0"
-debot-db = "1.4.*"
+debot-db = "1.5.*"
