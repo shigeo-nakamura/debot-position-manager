@@ -89,6 +89,9 @@ pub struct TradePosition {
     atr_term: Decimal,
     last_volume: Option<Decimal>,
     last_num_trades: Option<u64>,
+    last_funding_rate: Option<Decimal>,
+    last_open_interest: Option<Decimal>,
+    last_oracle_price: Option<Decimal>,
 }
 
 enum UpdateResult {
@@ -133,6 +136,9 @@ impl TradePosition {
         atr_term: Decimal,
         last_volume: Option<Decimal>,
         last_num_trades: Option<u64>,
+        last_funding_rate: Option<Decimal>,
+        last_open_interest: Option<Decimal>,
+        last_oracle_price: Option<Decimal>,
     ) -> Self {
         let decimal_0 = Decimal::new(0, 0);
         Self {
@@ -174,6 +180,9 @@ impl TradePosition {
             atr_term,
             last_volume,
             last_num_trades,
+            last_funding_rate,
+            last_open_interest,
+            last_oracle_price,
         }
     }
 
@@ -639,6 +648,18 @@ impl TradePosition {
 
     pub fn last_num_trades(&self) -> Option<u64> {
         self.last_num_trades
+    }
+
+    pub fn last_funding_rate(&self) -> Option<Decimal> {
+        self.last_funding_rate
+    }
+
+    pub fn last_open_interest(&self) -> Option<Decimal> {
+        self.last_open_interest
+    }
+
+    pub fn last_oracle_price(&self) -> Option<Decimal> {
+        self.last_oracle_price
     }
 
     pub fn rsi(&self) -> (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal) {
