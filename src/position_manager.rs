@@ -431,7 +431,12 @@ impl TradePosition {
         self.amount = Decimal::new(0, 0);
         self.asset_in_usd = Decimal::new(0, 0);
 
-        log::info!("-- Cloes the position: {}, pnl: {:.3?}", reason, self.pnl);
+        log::info!(
+            "-- Close the position[{}]: {}, pnl: {:.3?}",
+            self.position_type,
+            reason,
+            self.pnl
+        );
     }
 
     fn update_state(&mut self, new_state: State) {
