@@ -59,6 +59,7 @@ pub struct TradePosition {
     state: State,
     token_name: String,
     tick_count: u32,
+    tick_to_fill: u32,
     open_order_tick_count_max: u32,
     close_order_tick_count_max: u32,
     open_tick_count_max: u32,
@@ -149,6 +150,7 @@ impl TradePosition {
             unfilled_amount: ordered_amount,
             invested_amount: ordered_price * ordered_amount,
             tick_count: 0,
+            tick_to_fill: 0,
             open_order_tick_count_max,
             close_order_tick_count_max,
             open_tick_count_max,
@@ -446,6 +448,7 @@ impl TradePosition {
             State::Closing(_) | State::Canceled(_) => self.tick_count = 0,
             State::Open => match self.state {
                 State::Opening | State::Canceled(_) => {
+                    self.tick_to_fill = self.tick_count;
                     self.tick_count = 0;
                     self.set_open_time();
                 }
@@ -713,6 +716,10 @@ impl TradePosition {
 
     pub fn open_tick_count_max(&self) -> u32 {
         self.open_tick_count_max
+    }
+
+    pub fn tick_to_fill(&self) -> u32 {
+        self.tick_to_fill
     }
 
     fn should_take_profit(&self, close_price: Decimal) -> bool {
