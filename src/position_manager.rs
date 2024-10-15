@@ -447,8 +447,12 @@ impl TradePosition {
         match new_state {
             State::Closing(_) | State::Canceled(_) => self.tick_count = 0,
             State::Open => match self.state {
-                State::Opening | State::Canceled(_) => {
+                State::Opening => {
                     self.tick_to_fill = self.tick_count;
+                    self.tick_count = 0;
+                    self.set_open_time();
+                }
+                State::Canceled(_) => {
                     self.tick_count = 0;
                     self.set_open_time();
                 }
