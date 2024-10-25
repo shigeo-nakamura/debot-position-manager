@@ -390,6 +390,8 @@ impl TradePosition {
         asset_in_usd: Decimal,
         current_price: Decimal,
     ) {
+        self.close_asset_in_usd += asset_in_usd;
+
         match self.update_amount_and_pnl(position_type, amount, asset_in_usd, filled_price) {
             UpdateResult::Closed => {
                 self.delete(filled_price, "CounterTrade");
@@ -426,7 +428,6 @@ impl TradePosition {
             self.update_state(State::Closed(reason.to_owned()));
         }
 
-        self.close_asset_in_usd = self.asset_in_usd;
         self.close_price = close_price;
         self.pnl += Self::unrealized_pnl(close_price, self.amount, self.asset_in_usd);
         self.pnl -= self.fee;
