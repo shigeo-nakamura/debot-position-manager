@@ -55,7 +55,6 @@ pub struct TradePosition {
     order_id: String,
     ordered_price: Decimal,
     unfilled_amount: Decimal,
-    invested_amount: Decimal,
     state: State,
     token_name: String,
     tick_count: u32,
@@ -117,7 +116,6 @@ impl TradePosition {
         id: u32,
         fund_name: &str,
         order_id: &str,
-        ordered_price: Decimal,
         ordered_amount: Decimal,
         open_order_tick_count_max: u32,
         close_order_tick_count_max: u32,
@@ -146,9 +144,8 @@ impl TradePosition {
             id,
             fund_name: fund_name.to_owned(),
             order_id: order_id.to_owned(),
-            ordered_price,
+            ordered_price: Decimal::ZERO,
             unfilled_amount: ordered_amount,
-            invested_amount: ordered_price * ordered_amount,
             tick_count: 0,
             tick_to_fill: 0,
             open_order_tick_count_max,
@@ -580,10 +577,10 @@ impl TradePosition {
     }
 
     pub fn pnl(&self) -> (Decimal, Decimal) {
-        if self.invested_amount.is_zero() {
+        if self.asset_in_usd.is_zero() {
             (self.pnl, Decimal::ZERO)
         } else {
-            (self.pnl, self.pnl / self.invested_amount)
+            (self.pnl, self.pnl / self.asset_in_usd.abs())
         }
     }
 
