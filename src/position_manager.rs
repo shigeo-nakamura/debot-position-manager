@@ -454,6 +454,9 @@ impl TradePosition {
                     self.tick_count = 0;
                     self.set_open_time();
                 }
+                State::Open => {
+                    self.tick_count = 0;
+                }
                 State::Closing(_) => self.tick_count = self.open_tick_count_max,
                 _ => {}
             },
@@ -577,10 +580,10 @@ impl TradePosition {
     }
 
     pub fn pnl(&self) -> (Decimal, Decimal) {
-        if self.asset_in_usd.is_zero() {
+        if self.close_asset_in_usd.is_zero() {
             (self.pnl, Decimal::ZERO)
         } else {
-            (self.pnl, self.pnl / self.asset_in_usd.abs())
+            (self.pnl, self.pnl / self.close_asset_in_usd.abs())
         }
     }
 
