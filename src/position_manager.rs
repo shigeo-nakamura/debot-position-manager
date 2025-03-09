@@ -87,6 +87,7 @@ pub struct TradePosition {
     atr_spread: Decimal,
     risk_reward: Decimal,
     atr_term: Decimal,
+    flash_crash_atr_multiplier: Decimal,
     last_volume: Option<Decimal>,
     last_num_trades: Option<u64>,
     last_funding_rate: Option<Decimal>,
@@ -133,6 +134,7 @@ impl TradePosition {
         atr_spread: Decimal,
         risk_reward: Decimal,
         atr_term: Decimal,
+        flash_crash_atr_multiplier: Decimal,
         last_volume: Option<Decimal>,
         last_num_trades: Option<u64>,
         last_funding_rate: Option<Decimal>,
@@ -177,6 +179,7 @@ impl TradePosition {
             atr_spread,
             risk_reward,
             atr_term,
+            flash_crash_atr_multiplier,
             last_volume,
             last_num_trades,
             last_funding_rate,
@@ -725,6 +728,10 @@ impl TradePosition {
 
     pub fn tick_to_fill(&self) -> u32 {
         self.tick_to_fill
+    }
+
+    pub fn flash_crash_atr_multiplier(&self) -> Decimal {
+        self.flash_crash_atr_multiplier
     }
 
     fn should_take_profit(&self, close_price: Decimal) -> bool {
