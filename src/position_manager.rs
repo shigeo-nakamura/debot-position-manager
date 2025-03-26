@@ -89,6 +89,7 @@ pub struct TradePosition {
     atr_term: Decimal,
     flash_crash_atr_multiplier: Decimal,
     flash_crash_min_percentage: Option<Decimal>,
+    breakout_atr_multiplier: Decimal,
     last_volume: Option<Decimal>,
     last_num_trades: Option<u64>,
     last_funding_rate: Option<Decimal>,
@@ -137,6 +138,7 @@ impl TradePosition {
         atr_term: Decimal,
         flash_crash_atr_multiplier: Decimal,
         flash_crash_min_percentage: Option<Decimal>,
+        breakout_atr_multiplier: Decimal,
         last_volume: Option<Decimal>,
         last_num_trades: Option<u64>,
         last_funding_rate: Option<Decimal>,
@@ -183,6 +185,7 @@ impl TradePosition {
             atr_term,
             flash_crash_atr_multiplier,
             flash_crash_min_percentage,
+            breakout_atr_multiplier,
             last_volume,
             last_num_trades,
             last_funding_rate,
@@ -739,6 +742,10 @@ impl TradePosition {
 
     pub fn flash_crash_min_percentage(&self) -> Option<Decimal> {
         self.flash_crash_min_percentage
+    }
+
+    pub fn breakout_atr_multiplier(&self) -> Decimal {
+        self.breakout_atr_multiplier
     }
 
     fn should_take_profit(&self, close_price: Decimal) -> bool {
