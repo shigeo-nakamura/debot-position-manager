@@ -774,12 +774,10 @@ impl TradePosition {
             PositionType::Short => self.average_open_price - self.take_profit_price.unwrap(),
         };
 
-        // trailing_stop_ratio は期待利益に基づいて計算（ここは調整可能）
         let trailing_stop_ratio = expected_profit / self.average_open_price * Decimal::new(5, 1);
         let open_price = self.average_open_price;
 
-        // 更新閾値：現在のピーク／トラフから0.1%以上変動した場合にのみ更新する
-        let update_threshold: Decimal = Decimal::new(5, 4); // 0.001 = 0.1%
+        let update_threshold: Decimal = Decimal::new(5, 4);
 
         let mut result = false;
 
@@ -790,18 +788,16 @@ impl TradePosition {
                         return false;
                     }
                     let mut peak = self.trailing_peak_price.borrow_mut();
-                    // 初回なら、close_price.max(open_price) を設定
                     let current_peak = peak.get_or_insert(close_price.max(open_price));
-                    // もし、現在の価格が記録されているピークの1.1倍以上なら更新する
                     if close_price > *current_peak * (Decimal::ONE + update_threshold) {
                         *current_peak = close_price;
                     }
                     let stop_price = *current_peak * (Decimal::ONE - trailing_stop_ratio);
                     result = close_price <= stop_price && close_price > open_price;
 
-                    log::info!(
-                        "Trailing Stop [Long]: {} - close_price: {}, open_price: {}, current_peak: {}, expected_profit: {}, trailing_stop_ratio: {}, stop_price: {}, update_threshold: {}",
-                        result, close_price, open_price, *current_peak, expected_profit, trailing_stop_ratio, stop_price, update_threshold
+                    log::warn!(
+                        "Trailing Stop [Long][{}]: {} - current_price: {:.2}, open_price: {:.2}, current_peak: {:.2}, expected_profit: {:.2}, stop_price: {:.2}",
+                        self.id, result, close_price, open_price, *current_peak, close_price - open_price, stop_price,
                     );
                 }
             }
@@ -811,18 +807,16 @@ impl TradePosition {
                         return false;
                     }
                     let mut trough = self.trailing_peak_price.borrow_mut();
-                    // 初回なら、close_price.min(open_price) を設定
                     let current_trough = trough.get_or_insert(close_price.min(open_price));
-                    // ショートの場合、現在の価格が記録されているトラフの0.9倍（1 - 0.1）以下になったら更新する
                     if close_price < *current_trough * (Decimal::ONE - update_threshold) {
                         *current_trough = close_price;
                     }
                     let stop_price = *current_trough * (Decimal::ONE + trailing_stop_ratio);
                     result = close_price >= stop_price && close_price < open_price;
 
-                    log::info!(
-                        "Trailing Stop [Short]: {} - close_price: {}, open_price: {}, current_trough: {}, expected_profit: {}, trailing_stop_ratio: {}, stop_price: {}, update_threshold: {}",
-                        result, close_price, open_price, *current_trough, expected_profit, trailing_stop_ratio, stop_price, update_threshold
+                    log::warn!(
+                        "Trailing Stop [Short][{}]: {} - current_price: {:.2}, open_price: {:.2}, current_trough: {:.2}, expected_profit: {:.2}, stop_price: {:.2}",
+                        self.id, result, close_price, open_price, *current_trough, open_price - close_price, stop_price,
                     );
                 }
             }
