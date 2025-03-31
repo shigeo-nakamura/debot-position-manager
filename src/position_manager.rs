@@ -769,45 +769,39 @@ impl TradePosition {
             return false;
         }
 
-        // 期待利益
         let expected_profit = match self.position_type {
             PositionType::Long => self.take_profit_price.unwrap() - self.average_open_price,
             PositionType::Short => self.average_open_price - self.take_profit_price.unwrap(),
         };
 
-        // trailing_stop_ratio の計算（ここでは例として expected_profit の一定割合）
+        // trailing_stop_ratio は期待利益に基づいて計算（ここは調整可能）
         let trailing_stop_ratio = expected_profit / self.average_open_price * Decimal::new(5, 1);
         let open_price = self.average_open_price;
 
-        // ここで、最初の N tick だけピーク／トラフを更新する
-        const PEAK_UPDATE_TICK_THRESHOLD: u32 = 10;
-        let update_peak = self.tick_count < PEAK_UPDATE_TICK_THRESHOLD;
+        // 更新閾値：現在のピーク／トラフから0.1%以上変動した場合にのみ更新する
+        let update_threshold: Decimal = Decimal::new(5, 4); // 0.001 = 0.1%
 
         let mut result = false;
 
         match self.position_type {
             PositionType::Long => {
                 if let Some(take_profit_price) = self.take_profit_price {
-                    // TP に達していなければ何もせず false
                     if close_price < take_profit_price {
                         return false;
                     }
                     let mut peak = self.trailing_peak_price.borrow_mut();
-                    if update_peak {
-                        // update_peak=true のときのみ最新値で更新
-                        let current_peak = peak.get_or_insert(close_price.max(open_price));
-                        if close_price > *current_peak {
-                            *current_peak = close_price;
-                        }
+                    // 初回なら、close_price.max(open_price) を設定
+                    let current_peak = peak.get_or_insert(close_price.max(open_price));
+                    // もし、現在の価格が記録されているピークの1.1倍以上なら更新する
+                    if close_price > *current_peak * (Decimal::ONE + update_threshold) {
+                        *current_peak = close_price;
                     }
-                    // 更新が停止している場合は既存の値をそのまま利用
-                    let current_peak = *peak.as_ref().unwrap_or(&open_price);
-                    let stop_price = current_peak * (Decimal::ONE - trailing_stop_ratio);
+                    let stop_price = *current_peak * (Decimal::ONE - trailing_stop_ratio);
                     result = close_price <= stop_price && close_price > open_price;
 
                     log::info!(
-                        "Trailing Stop [Long]: {} - close_price: {}, open_price: {}, current_peak: {}, tick_count: {}, threshold: {}, expected_profit: {}, trailing_stop_ratio: {}, stop_price: {}",
-                        result, close_price, open_price, current_peak, self.tick_count, PEAK_UPDATE_TICK_THRESHOLD, expected_profit, trailing_stop_ratio, stop_price
+                        "Trailing Stop [Long]: {} - close_price: {}, open_price: {}, current_peak: {}, expected_profit: {}, trailing_stop_ratio: {}, stop_price: {}, update_threshold: {}",
+                        result, close_price, open_price, *current_peak, expected_profit, trailing_stop_ratio, stop_price, update_threshold
                     );
                 }
             }
@@ -817,19 +811,18 @@ impl TradePosition {
                         return false;
                     }
                     let mut trough = self.trailing_peak_price.borrow_mut();
-                    if update_peak {
-                        let current_trough = trough.get_or_insert(close_price.min(open_price));
-                        if close_price < *current_trough {
-                            *current_trough = close_price;
-                        }
+                    // 初回なら、close_price.min(open_price) を設定
+                    let current_trough = trough.get_or_insert(close_price.min(open_price));
+                    // ショートの場合、現在の価格が記録されているトラフの0.9倍（1 - 0.1）以下になったら更新する
+                    if close_price < *current_trough * (Decimal::ONE - update_threshold) {
+                        *current_trough = close_price;
                     }
-                    let current_trough = *trough.as_ref().unwrap_or(&open_price);
-                    let stop_price = current_trough * (Decimal::ONE + trailing_stop_ratio);
+                    let stop_price = *current_trough * (Decimal::ONE + trailing_stop_ratio);
                     result = close_price >= stop_price && close_price < open_price;
 
                     log::info!(
-                        "Trailing Stop [Short]: {} - close_price: {}, open_price: {}, current_trough: {}, tick_count: {}, threshold: {}, expected_profit: {}, trailing_stop_ratio: {}, stop_price: {}",
-                        result, close_price, open_price, current_trough, self.tick_count, PEAK_UPDATE_TICK_THRESHOLD, expected_profit, trailing_stop_ratio, stop_price
+                        "Trailing Stop [Short]: {} - close_price: {}, open_price: {}, current_trough: {}, expected_profit: {}, trailing_stop_ratio: {}, stop_price: {}, update_threshold: {}",
+                        result, close_price, open_price, *current_trough, expected_profit, trailing_stop_ratio, stop_price, update_threshold
                     );
                 }
             }
