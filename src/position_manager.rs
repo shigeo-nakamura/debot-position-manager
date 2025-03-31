@@ -3,7 +3,7 @@ use debot_db::CandlePattern;
 use debot_utils::get_local_time;
 use rust_decimal::{prelude::Signed, Decimal};
 use serde::{Deserialize, Serialize};
-use std::fmt;
+use std::{cell::RefCell, fmt};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReasonForClose {
@@ -76,6 +76,7 @@ pub struct TradePosition {
     asset_in_usd: Decimal,
     pnl: Decimal,
     fee: Decimal,
+    trailing_peak_price: RefCell<Option<Decimal>>,
     // for debug
     atr: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
     adx: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
@@ -177,6 +178,7 @@ impl TradePosition {
             asset_in_usd: decimal_0,
             pnl: decimal_0,
             fee: decimal_0,
+            trailing_peak_price: None.into(),
             atr,
             adx,
             rsi,
@@ -767,15 +769,47 @@ impl TradePosition {
             return false;
         }
 
-        match self.take_profit_price {
-            Some(take_profit_price) => {
-                if self.position_type == PositionType::Long {
-                    close_price >= take_profit_price
+        let expected_profit = match self.position_type {
+            PositionType::Long => self.take_profit_price.unwrap() - self.average_open_price,
+            PositionType::Short => self.average_open_price - self.take_profit_price.unwrap(),
+        };
+
+        let trailing_stop_ratio = expected_profit / self.average_open_price * Decimal::new(5, 1);
+        let open_price = self.average_open_price;
+
+        match self.position_type {
+            PositionType::Long => {
+                if let Some(take_profit_price) = self.take_profit_price {
+                    if close_price < take_profit_price {
+                        return false;
+                    }
+                    let mut peak = self.trailing_peak_price.borrow_mut();
+                    let current_peak = peak.get_or_insert(close_price.max(open_price));
+                    if close_price > *current_peak {
+                        *current_peak = close_price;
+                    }
+                    let stop_price = *current_peak * (Decimal::ONE - trailing_stop_ratio);
+                    close_price <= stop_price && close_price > open_price
                 } else {
-                    close_price <= take_profit_price
+                    false
                 }
             }
-            None => false,
+            PositionType::Short => {
+                if let Some(take_profit_price) = self.take_profit_price {
+                    if close_price > take_profit_price {
+                        return false;
+                    }
+                    let mut trough = self.trailing_peak_price.borrow_mut();
+                    let current_trough = trough.get_or_insert(close_price.min(open_price));
+                    if close_price < *current_trough {
+                        *current_trough = close_price;
+                    }
+                    let stop_price = *current_trough * (Decimal::ONE + trailing_stop_ratio);
+                    close_price >= stop_price && close_price < open_price
+                } else {
+                    false
+                }
+            }
         }
     }
 
