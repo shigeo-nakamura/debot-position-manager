@@ -796,9 +796,6 @@ impl TradePosition {
 
         let trailing_stop_ratio = expected_profit / self.average_open_price * Decimal::new(5, 1);
         let open_price = self.average_open_price;
-
-        let update_threshold: Decimal = Decimal::new(5, 4);
-
         let mut result = false;
 
         match self.position_type {
@@ -807,17 +804,20 @@ impl TradePosition {
                     if close_price < take_profit_price {
                         return false;
                     }
+
                     let mut peak = self.trailing_peak_price.borrow_mut();
                     let current_peak = peak.get_or_insert(close_price.max(open_price));
-                    if close_price > *current_peak * (Decimal::ONE + update_threshold) {
+
+                    if close_price > *current_peak {
                         *current_peak = close_price;
                     }
+
                     let stop_price = *current_peak * (Decimal::ONE - trailing_stop_ratio);
                     result = close_price <= stop_price && close_price > open_price;
 
                     log::warn!(
-                        "Trailing Stop [Long][{}]: {} - current_price: {:.2}, open_price: {:.2}, current_peak: {:.2}, expected_profit: {:.2}, stop_price: {:.2}",
-                        self.id, result, close_price, open_price, *current_peak, close_price - open_price, stop_price,
+                        "Trailing Stop [Long][{}]: {} - current_price: {:.2}, open_price: {:.2}, current_peak: {:.2}, expected_profit: {:.2}, stop_price: {:.2}, trailing_ratio: {:.4}",
+                        self.id, result, close_price, open_price, *current_peak, close_price - open_price, stop_price, trailing_stop_ratio
                     );
                 }
             }
@@ -826,21 +826,25 @@ impl TradePosition {
                     if close_price > take_profit_price {
                         return false;
                     }
+
                     let mut trough = self.trailing_peak_price.borrow_mut();
                     let current_trough = trough.get_or_insert(close_price.min(open_price));
-                    if close_price < *current_trough * (Decimal::ONE - update_threshold) {
+
+                    if close_price < *current_trough {
                         *current_trough = close_price;
                     }
+
                     let stop_price = *current_trough * (Decimal::ONE + trailing_stop_ratio);
                     result = close_price >= stop_price && close_price < open_price;
 
                     log::warn!(
-                        "Trailing Stop [Short][{}]: {} - current_price: {:.2}, open_price: {:.2}, current_trough: {:.2}, expected_profit: {:.2}, stop_price: {:.2}",
-                        self.id, result, close_price, open_price, *current_trough, open_price - close_price, stop_price,
+                        "Trailing Stop [Short][{}]: {} - current_price: {:.2}, open_price: {:.2}, current_trough: {:.2}, expected_profit: {:.2}, stop_price: {:.2}, trailing_ratio: {:.4}",
+                        self.id, result, close_price, open_price, *current_trough, open_price - close_price, stop_price, trailing_stop_ratio
                     );
                 }
             }
         }
+
         result
     }
 
