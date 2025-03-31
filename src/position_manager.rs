@@ -777,6 +777,8 @@ impl TradePosition {
         let trailing_stop_ratio = expected_profit / self.average_open_price * Decimal::new(5, 1);
         let open_price = self.average_open_price;
 
+        let mut result = false;
+
         match self.position_type {
             PositionType::Long => {
                 if let Some(take_profit_price) = self.take_profit_price {
@@ -789,9 +791,12 @@ impl TradePosition {
                         *current_peak = close_price;
                     }
                     let stop_price = *current_peak * (Decimal::ONE - trailing_stop_ratio);
-                    close_price <= stop_price && close_price > open_price
-                } else {
-                    false
+                    result = close_price <= stop_price && close_price > open_price;
+
+                    log::info!(
+                        "Trailing Stop [Long]: {} - close_price: {}, open_price: {}, current_peak: {}, expected_profit: {}, trailing_stop_ratio: {}, stop_price: {}",
+                        result, close_price, open_price, *current_peak, expected_profit, trailing_stop_ratio, stop_price
+                    );
                 }
             }
             PositionType::Short => {
@@ -805,12 +810,16 @@ impl TradePosition {
                         *current_trough = close_price;
                     }
                     let stop_price = *current_trough * (Decimal::ONE + trailing_stop_ratio);
-                    close_price >= stop_price && close_price < open_price
-                } else {
-                    false
+                    result = close_price >= stop_price && close_price < open_price;
+
+                    log::info!(
+                        "Trailing Stop [Short]: {} - close_price: {}, open_price: {}, current_peak: {}, expected_profit: {}, trailing_stop_ratio: {}, stop_price: {}",
+                        result, close_price, open_price, *current_trough, expected_profit, trailing_stop_ratio, stop_price
+                    );
                 }
             }
         }
+        result
     }
 
     fn should_cut_loss(&self, close_price: Decimal) -> bool {
