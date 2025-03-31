@@ -588,14 +588,6 @@ impl TradePosition {
         }
     }
 
-    pub fn should_open_expired(&self) -> bool {
-        if matches!(self.state, State::Open) {
-            self.tick_count > self.open_tick_count_max
-        } else {
-            false
-        }
-    }
-
     pub fn pnl(&self) -> (Decimal, Decimal) {
         if self.close_asset_in_usd.is_zero() {
             (self.pnl, Decimal::ZERO)
@@ -762,6 +754,34 @@ impl TradePosition {
 
     pub fn price_loopback(&self) -> usize {
         self.price_loopback
+    }
+
+    fn has_reached_take_profit(&self, close_price: Decimal) -> bool {
+        match self.position_type {
+            PositionType::Long => {
+                if let Some(take_profit_price) = self.take_profit_price {
+                    if close_price >= take_profit_price {
+                        return true;
+                    }
+                }
+            }
+            PositionType::Short => {
+                if let Some(take_profit_price) = self.take_profit_price {
+                    if close_price <= take_profit_price {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    pub fn should_open_expired(&self, close_price: Decimal) -> bool {
+        if matches!(self.state, State::Open) {
+            self.tick_count > self.open_tick_count_max && !self.has_reached_take_profit(close_price)
+        } else {
+            false
+        }
     }
 
     fn should_take_profit(&self, close_price: Decimal) -> bool {
