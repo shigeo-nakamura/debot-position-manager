@@ -88,8 +88,6 @@ pub struct TradePosition {
     atr_spread: Decimal,
     risk_reward: Decimal,
     atr_term: Decimal,
-    flash_crash_atr_multiplier: Decimal,
-    flash_crash_min_percentage: Option<Decimal>,
     breakout_atr_multiplier: Decimal,
     rsi_threshold: Decimal,
     price_loopback: usize,
@@ -140,8 +138,6 @@ impl TradePosition {
         atr_spread: Decimal,
         risk_reward: Decimal,
         atr_term: Decimal,
-        flash_crash_atr_multiplier: Decimal,
-        flash_crash_min_percentage: Option<Decimal>,
         breakout_atr_multiplier: Decimal,
         rsi_threshold: Decimal,
         price_loopback: usize,
@@ -191,8 +187,6 @@ impl TradePosition {
             atr_spread,
             risk_reward,
             atr_term,
-            flash_crash_atr_multiplier,
-            flash_crash_min_percentage,
             breakout_atr_multiplier,
             rsi_threshold,
             price_loopback,
@@ -737,14 +731,6 @@ impl TradePosition {
 
     pub fn tick_to_fill(&self) -> u32 {
         self.tick_to_fill
-    }
-
-    pub fn flash_crash_atr_multiplier(&self) -> Decimal {
-        self.flash_crash_atr_multiplier
-    }
-
-    pub fn flash_crash_min_percentage(&self) -> Option<Decimal> {
-        self.flash_crash_min_percentage
     }
 
     pub fn breakout_atr_multiplier(&self) -> Decimal {
