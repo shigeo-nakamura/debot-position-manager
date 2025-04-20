@@ -89,8 +89,6 @@ pub struct TradePosition {
     risk_reward: Decimal,
     atr_term: Decimal,
     breakout_atr_multiplier: Decimal,
-    rsi_threshold: Decimal,
-    price_loopback: usize,
     grid_entry_spread: i64,
     last_volume: Option<Decimal>,
     last_num_trades: Option<u64>,
@@ -139,8 +137,6 @@ impl TradePosition {
         risk_reward: Decimal,
         atr_term: Decimal,
         breakout_atr_multiplier: Decimal,
-        rsi_threshold: Decimal,
-        price_loopback: usize,
         grid_entry_spread: i64,
         last_volume: Option<Decimal>,
         last_num_trades: Option<u64>,
@@ -188,8 +184,6 @@ impl TradePosition {
             risk_reward,
             atr_term,
             breakout_atr_multiplier,
-            rsi_threshold,
-            price_loopback,
             grid_entry_spread,
             last_volume,
             last_num_trades,
@@ -735,14 +729,6 @@ impl TradePosition {
 
     pub fn breakout_atr_multiplier(&self) -> Decimal {
         self.breakout_atr_multiplier
-    }
-
-    pub fn rsi_threshold(&self) -> Decimal {
-        self.rsi_threshold
-    }
-
-    pub fn price_loopback(&self) -> usize {
-        self.price_loopback
     }
 
     pub fn grid_entry_spread(&self) -> i64 {
