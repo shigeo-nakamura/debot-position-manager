@@ -88,7 +88,7 @@ pub struct TradePosition {
     atr_spread: Decimal,
     risk_reward: Decimal,
     atr_term: Decimal,
-    grid_entry_spread: i64,
+    tick_spread: i64,
     last_volume: Option<Decimal>,
     last_num_trades: Option<u64>,
     last_funding_rate: Option<Decimal>,
@@ -135,7 +135,7 @@ impl TradePosition {
         atr_spread: Decimal,
         risk_reward: Decimal,
         atr_term: Decimal,
-        grid_entry_spread: i64,
+        tick_spread: i64,
         last_volume: Option<Decimal>,
         last_num_trades: Option<u64>,
         last_funding_rate: Option<Decimal>,
@@ -181,7 +181,7 @@ impl TradePosition {
             atr_spread,
             risk_reward,
             atr_term,
-            grid_entry_spread,
+            tick_spread,
             last_volume,
             last_num_trades,
             last_funding_rate,
@@ -724,8 +724,8 @@ impl TradePosition {
         self.tick_to_fill
     }
 
-    pub fn grid_entry_spread(&self) -> i64 {
-        self.grid_entry_spread
+    pub fn tick_spread(&self) -> i64 {
+        self.tick_spread
     }
 
     fn has_reached_take_profit(&self, close_price: Decimal) -> bool {
