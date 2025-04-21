@@ -88,7 +88,6 @@ pub struct TradePosition {
     atr_spread: Decimal,
     risk_reward: Decimal,
     atr_term: Decimal,
-    breakout_atr_multiplier: Decimal,
     grid_entry_spread: i64,
     last_volume: Option<Decimal>,
     last_num_trades: Option<u64>,
@@ -136,7 +135,6 @@ impl TradePosition {
         atr_spread: Decimal,
         risk_reward: Decimal,
         atr_term: Decimal,
-        breakout_atr_multiplier: Decimal,
         grid_entry_spread: i64,
         last_volume: Option<Decimal>,
         last_num_trades: Option<u64>,
@@ -183,7 +181,6 @@ impl TradePosition {
             atr_spread,
             risk_reward,
             atr_term,
-            breakout_atr_multiplier,
             grid_entry_spread,
             last_volume,
             last_num_trades,
@@ -725,10 +722,6 @@ impl TradePosition {
 
     pub fn tick_to_fill(&self) -> u32 {
         self.tick_to_fill
-    }
-
-    pub fn breakout_atr_multiplier(&self) -> Decimal {
-        self.breakout_atr_multiplier
     }
 
     pub fn grid_entry_spread(&self) -> i64 {
