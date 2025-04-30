@@ -787,7 +787,7 @@ impl TradePosition {
                     let stop_price = *current_peak * (Decimal::ONE - trailing_stop_ratio);
                     result = close_price <= stop_price && close_price > open_price;
 
-                    log::info!(
+                    log::warn!(
                         "Trailing Stop [Long][{}]: {} - current_price: {:.2}, open_price: {:.2}, current_peak: {:.2}, expected_profit: {:.2}, stop_price: {:.2}, trailing_ratio: {:.4}",
                         self.id, result, close_price, open_price, *current_peak, close_price - open_price, stop_price, trailing_stop_ratio
                     );
@@ -809,7 +809,7 @@ impl TradePosition {
                     let stop_price = *current_trough * (Decimal::ONE + trailing_stop_ratio);
                     result = close_price >= stop_price && close_price < open_price;
 
-                    log::info!(
+                    log::warn!(
                         "Trailing Stop [Short][{}]: {} - current_price: {:.2}, open_price: {:.2}, current_trough: {:.2}, expected_profit: {:.2}, stop_price: {:.2}, trailing_ratio: {:.4}",
                         self.id, result, close_price, open_price, *current_trough, open_price - close_price, stop_price, trailing_stop_ratio
                     );
