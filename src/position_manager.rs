@@ -31,6 +31,7 @@ pub enum State {
     #[default]
     Opening,
     Open,
+    PendingCancel,
     Closing(String),
     Closed(String),
     Canceled(String),
@@ -41,9 +42,10 @@ impl fmt::Display for State {
         match self {
             State::Opening => write!(f, "Opening"),
             State::Open => write!(f, "Open"),
+            State::PendingCancel => write!(f, "PendingCancel"),
             State::Closing(reason) => write!(f, "Closing({})", reason),
             State::Closed(reason) => write!(f, "Closed({})", reason),
-            State::Canceled(reason) => write!(f, "Canceled({}", reason),
+            State::Canceled(reason) => write!(f, "Canceled({})", reason),
         }
     }
 }
@@ -98,7 +100,7 @@ pub struct TradePosition {
 
 enum UpdateResult {
     Closed,
-    Decreaed,
+    Decreased,
     Inverted,
 }
 
@@ -208,7 +210,7 @@ impl TradePosition {
                     self.update_state(State::Open)
                 }
             }
-            State::Open | State::Closing(_) => {}
+            State::Open | State::Closing(_) | State::PendingCancel => {}
             _ => {
                 log::error!("on_filled: Invalid state: {}", self.state);
                 return Err(());
@@ -289,8 +291,8 @@ impl TradePosition {
                     return Err(());
                 }
             }
-            State::Open => {
-                log::debug!("requeset_close: reason = {}", reason.to_owned());
+            State::Open | State::PendingCancel => {
+                log::debug!("request_close: reason = {}", reason.to_owned());
             }
             _ => {
                 log::error!("request_close: Invalid state(2): {:?}", self);
@@ -321,7 +323,7 @@ impl TradePosition {
                 }
             }
             State::Closing(_) => {
-                self.update_state(State::Open);
+                self.update_state(State::PendingCancel);
                 log::info!("-- Canceling the closing order: {}", self.order_id);
                 Ok(CancelResult::ClosingCanceled)
             }
@@ -409,7 +411,7 @@ impl TradePosition {
                     self.format_position(filled_price)
                 );
             }
-            UpdateResult::Decreaed => {
+            UpdateResult::Decreased => {
                 log::info!(
                     "** The position is decreased: {}",
                     self.format_position(current_price)
@@ -491,7 +493,7 @@ impl TradePosition {
         } else if prev_amount.signum() != self.amount.signum() {
             UpdateResult::Inverted
         } else {
-            UpdateResult::Decreaed
+            UpdateResult::Decreased
         };
 
         let pnl = self.calculate_pnl_for_update(
@@ -513,7 +515,7 @@ impl TradePosition {
         prev_asset_in_usd: Decimal,
     ) -> Decimal {
         match update_result {
-            UpdateResult::Decreaed => {
+            UpdateResult::Decreased => {
                 (close_price - self.average_open_price) * (prev_amount - self.amount)
             }
             _ => Self::unrealized_pnl(close_price, prev_amount, prev_asset_in_usd),
@@ -749,7 +751,7 @@ impl TradePosition {
     }
 
     pub fn should_open_expired(&self, close_price: Decimal) -> bool {
-        if matches!(self.state, State::Open) {
+        if matches!(self.state, State::Open | State::PendingCancel) {
             self.tick_count > self.open_tick_count_max && !self.has_reached_take_profit(close_price)
         } else {
             false
@@ -757,7 +759,7 @@ impl TradePosition {
     }
 
     fn should_take_profit(&self, close_price: Decimal) -> bool {
-        if self.state != State::Open {
+        if !matches!(self.state, State::Open | State::PendingCancel) {
             return false;
         }
 
@@ -821,7 +823,7 @@ impl TradePosition {
     }
 
     fn should_cut_loss(&self, close_price: Decimal) -> bool {
-        if self.state != State::Open {
+        if !matches!(self.state, State::Open | State::PendingCancel) {
             return false;
         }
 
