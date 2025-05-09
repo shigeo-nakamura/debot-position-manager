@@ -31,10 +31,8 @@ pub enum State {
     #[default]
     Opening,
     Open,
-    PendingCancel,
     Closing(String),
     Closed(String),
-    Canceled(String),
 }
 
 impl fmt::Display for State {
@@ -42,10 +40,8 @@ impl fmt::Display for State {
         match self {
             State::Opening => write!(f, "Opening"),
             State::Open => write!(f, "Open"),
-            State::PendingCancel => write!(f, "PendingCancel"),
             State::Closing(reason) => write!(f, "Closing({})", reason),
             State::Closed(reason) => write!(f, "Closed({})", reason),
-            State::Canceled(reason) => write!(f, "Canceled({})", reason),
         }
     }
 }
@@ -204,13 +200,13 @@ impl TradePosition {
         current_price: Decimal,
     ) -> Result<(), ()> {
         match self.state {
-            State::Opening | State::Canceled(_) => {
+            State::Opening => {
                 self.unfilled_amount -= amount;
                 if self.unfilled_amount.is_zero() {
                     self.update_state(State::Open)
                 }
             }
-            State::Open | State::Closing(_) | State::PendingCancel => {}
+            State::Open | State::Closing(_) => {}
             _ => {
                 log::error!("on_filled: Invalid state: {}", self.state);
                 return Err(());
@@ -291,7 +287,7 @@ impl TradePosition {
                     return Err(());
                 }
             }
-            State::Open | State::PendingCancel => {
+            State::Open => {
                 log::debug!("request_close: reason = {}", reason.to_owned());
             }
             _ => {
@@ -310,7 +306,7 @@ impl TradePosition {
         match self.state {
             State::Opening => {
                 if self.amount.is_zero() {
-                    self.update_state(State::Canceled(String::from("Not filled at all")));
+                    self.update_state(State::Closed(String::from("Not filled at all")));
                     log::debug!("-- Canceled the opening order: {}", self.order_id);
                     Ok(CancelResult::OpeningCanceled)
                 } else {
@@ -323,7 +319,7 @@ impl TradePosition {
                 }
             }
             State::Closing(_) => {
-                self.update_state(State::PendingCancel);
+                self.update_state(State::Open);
                 log::info!("-- Canceling the closing order: {}", self.order_id);
                 Ok(CancelResult::ClosingCanceled)
             }
@@ -335,7 +331,7 @@ impl TradePosition {
     }
 
     pub fn ignore(&mut self) {
-        self.update_state(State::Canceled("Partially filled".to_owned()));
+        self.update_state(State::Closed("Partially filled".to_owned()));
     }
 
     fn increase(
@@ -422,7 +418,7 @@ impl TradePosition {
 
     fn delete(&mut self, close_price: Decimal, reason: &str) {
         if self.state == State::Opening && self.amount.is_zero() {
-            self.update_state(State::Canceled(reason.to_owned()));
+            self.update_state(State::Closed(reason.to_owned()));
             return;
         }
 
@@ -450,14 +446,10 @@ impl TradePosition {
         assert!(new_state != self.state, "The same state: {:?}", new_state);
 
         match new_state {
-            State::Closing(_) | State::Canceled(_) => self.tick_count = 0,
+            State::Closing(_) => self.tick_count = 0,
             State::Open => match self.state {
                 State::Opening => {
                     self.tick_to_fill = self.tick_count;
-                    self.tick_count = 0;
-                    self.set_open_time();
-                }
-                State::Canceled(_) => {
                     self.tick_count = 0;
                     self.set_open_time();
                 }
@@ -567,14 +559,6 @@ impl TradePosition {
             Some(ReasonForClose::CutLoss)
         } else {
             None
-        }
-    }
-
-    pub fn is_cancel_expired(&self) -> bool {
-        if matches!(self.state, State::Canceled(_)) {
-            self.tick_count > self.close_order_tick_count_max
-        } else {
-            false
         }
     }
 
@@ -751,7 +735,7 @@ impl TradePosition {
     }
 
     pub fn should_open_expired(&self, close_price: Decimal) -> bool {
-        if matches!(self.state, State::Open | State::PendingCancel) {
+        if matches!(self.state, State::Open) {
             self.tick_count > self.open_tick_count_max && !self.has_reached_take_profit(close_price)
         } else {
             false
@@ -759,7 +743,7 @@ impl TradePosition {
     }
 
     fn should_take_profit(&self, close_price: Decimal) -> bool {
-        if !matches!(self.state, State::Open | State::PendingCancel) {
+        if !matches!(self.state, State::Open) {
             return false;
         }
 
@@ -823,7 +807,7 @@ impl TradePosition {
     }
 
     fn should_cut_loss(&self, close_price: Decimal) -> bool {
-        if !matches!(self.state, State::Open | State::PendingCancel) {
+        if !matches!(self.state, State::Open) {
             return false;
         }
 
