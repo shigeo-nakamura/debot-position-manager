@@ -56,10 +56,11 @@ pub struct TradePosition {
     state: State,
     token_name: String,
     tick_count: u32,
-    tick_to_fill: u32,
-    open_order_tick_count_max: u32,
-    close_order_tick_count_max: u32,
-    open_tick_count_max: u32,
+    actual_entry_tick: u32,
+    actual_hold_tick: u32,
+    entry_timeout_tick_count: u32,
+    exit_timeout_tick_count: u32,
+    max_holding_tick_count: u32,
     open_time_str: String,
     open_timestamp: i64,
     close_time_str: String,
@@ -81,7 +82,14 @@ pub struct TradePosition {
     rsi: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
     stochastic: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
     price: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
-    candle_pattern: (CandlePattern, CandlePattern, CandlePattern, CandlePattern),
+    candle_pattern: (
+        CandlePattern,
+        CandlePattern,
+        CandlePattern,
+        CandlePattern,
+        CandlePattern,
+        CandlePattern,
+    ),
     take_profit_ratio: Decimal,
     atr_spread: Decimal,
     risk_reward: Decimal,
@@ -117,9 +125,9 @@ impl TradePosition {
         fund_name: &str,
         order_id: &str,
         ordered_amount: Decimal,
-        open_order_tick_count_max: u32,
-        close_order_tick_count_max: u32,
-        open_tick_count_max: u32,
+        entry_timeout_tick_count: u32,
+        exit_timeout_tick_count: u32,
+        max_holding_tick_count: u32,
         token_name: &str,
         position_type: PositionType,
         predicted_price: Decimal,
@@ -128,7 +136,14 @@ impl TradePosition {
         rsi: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
         stochastic: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
         price: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
-        candle_pattern: (CandlePattern, CandlePattern, CandlePattern, CandlePattern),
+        candle_pattern: (
+            CandlePattern,
+            CandlePattern,
+            CandlePattern,
+            CandlePattern,
+            CandlePattern,
+            CandlePattern,
+        ),
         take_profit_ratio: Decimal,
         atr_spread: Decimal,
         risk_reward: Decimal,
@@ -148,10 +163,11 @@ impl TradePosition {
             ordered_price: Decimal::ZERO,
             unfilled_amount: ordered_amount,
             tick_count: 0,
-            tick_to_fill: 0,
-            open_order_tick_count_max,
-            close_order_tick_count_max,
-            open_tick_count_max,
+            actual_entry_tick: 0,
+            actual_hold_tick: 0,
+            entry_timeout_tick_count,
+            exit_timeout_tick_count,
+            max_holding_tick_count,
             state: State::Opening,
             token_name: token_name.to_owned(),
             open_time_str: String::new(),
@@ -449,17 +465,17 @@ impl TradePosition {
             State::Closing(_) => self.tick_count = 0,
             State::Open => match self.state {
                 State::Opening => {
-                    self.tick_to_fill = self.tick_count;
+                    self.actual_entry_tick = self.tick_count;
                     self.tick_count = 0;
                     self.set_open_time();
                 }
                 State::Open => {
                     self.tick_count = 0;
                 }
-                State::Closing(_) => self.tick_count = self.open_tick_count_max,
                 _ => {}
             },
             State::Closed(_) => {
+                self.actual_hold_tick = self.tick_count;
                 self.set_close_time();
             }
             _ => {}
@@ -540,8 +556,8 @@ impl TradePosition {
 
     pub fn should_cancel_order(&self) -> bool {
         match self.state {
-            State::Opening => self.tick_count > self.open_order_tick_count_max,
-            State::Closing(_) => self.tick_count > self.close_order_tick_count_max,
+            State::Opening => self.tick_count > self.entry_timeout_tick_count,
+            State::Closing(_) => self.tick_count > self.exit_timeout_tick_count,
             _ => false,
         }
     }
@@ -678,7 +694,16 @@ impl TradePosition {
         self.price
     }
 
-    pub fn candle_pattern(&self) -> (CandlePattern, CandlePattern, CandlePattern, CandlePattern) {
+    pub fn candle_pattern(
+        &self,
+    ) -> (
+        CandlePattern,
+        CandlePattern,
+        CandlePattern,
+        CandlePattern,
+        CandlePattern,
+        CandlePattern,
+    ) {
         self.candle_pattern
     }
 
@@ -702,12 +727,12 @@ impl TradePosition {
         self.fee
     }
 
-    pub fn open_tick_count_max(&self) -> u32 {
-        self.open_tick_count_max
+    pub fn actual_entry_tick(&self) -> u32 {
+        self.actual_entry_tick
     }
 
-    pub fn tick_to_fill(&self) -> u32 {
-        self.tick_to_fill
+    pub fn actual_hold_tick(&self) -> u32 {
+        self.actual_hold_tick
     }
 
     pub fn tick_spread(&self) -> i64 {
@@ -736,7 +761,8 @@ impl TradePosition {
 
     pub fn should_open_expired(&self, close_price: Decimal) -> bool {
         if matches!(self.state, State::Open) {
-            self.tick_count > self.open_tick_count_max && !self.has_reached_take_profit(close_price)
+            self.tick_count > self.max_holding_tick_count
+                && !self.has_reached_take_profit(close_price)
         } else {
             false
         }
