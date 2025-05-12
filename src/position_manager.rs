@@ -812,42 +812,41 @@ impl TradePosition {
 
         let triggered = self.is_trailing_stop_triggered(close_price);
 
-        if triggered {
-            // Detailed logging for debugging trailing stop
-            match self.position_type {
-                PositionType::Long => {
-                    if let Some(peak) = *self.trailing_peak_price.borrow() {
-                        let expected_profit = self.take_profit_price.unwrap() - open_price;
-                        let trailing_stop_ratio = expected_profit / open_price * Decimal::new(5, 1);
-                        let stop_price = peak * (Decimal::ONE - trailing_stop_ratio);
-                        log::warn!(
-                            "Trailing Stop [Long][{}]: true - current_price: {:.2}, open_price: {:.2}, current_peak: {:.2}, expected_profit: {:.2}, stop_price: {:.2}, trailing_ratio: {:.4}",
-                            self.id,
-                            close_price,
-                            open_price,
-                            peak,
-                            close_price - open_price,
-                            stop_price,
-                            trailing_stop_ratio
-                        );
-                    }
+        match self.position_type {
+            PositionType::Long => {
+                if let Some(peak) = *self.trailing_peak_price.borrow() {
+                    let expected_profit = self.take_profit_price.unwrap() - open_price;
+                    let trailing_stop_ratio = expected_profit / open_price * Decimal::new(5, 1);
+                    let stop_price = peak * (Decimal::ONE - trailing_stop_ratio);
+                    log::warn!(
+                        "Trailing Stop [Long][{}]: {} - current_price: {:.2}, open_price: {:.2}, current_peak: {:.2}, expected_profit: {:.2}, stop_price: {:.2}, trailing_ratio: {:.4}",
+                        self.id,
+                        triggered,
+                        close_price,
+                        open_price,
+                        peak,
+                        close_price - open_price,
+                        stop_price,
+                        trailing_stop_ratio
+                    );
                 }
-                PositionType::Short => {
-                    if let Some(trough) = *self.trailing_peak_price.borrow() {
-                        let expected_profit = open_price - self.take_profit_price.unwrap();
-                        let trailing_stop_ratio = expected_profit / open_price * Decimal::new(5, 1);
-                        let stop_price = trough * (Decimal::ONE + trailing_stop_ratio);
-                        log::warn!(
-                            "Trailing Stop [Short][{}]: true - current_price: {:.2}, open_price: {:.2}, current_trough: {:.2}, expected_profit: {:.2}, stop_price: {:.2}, trailing_ratio: {:.4}",
-                            self.id,
-                            close_price,
-                            open_price,
-                            trough,
-                            open_price - close_price,
-                            stop_price,
-                            trailing_stop_ratio
-                        );
-                    }
+            }
+            PositionType::Short => {
+                if let Some(trough) = *self.trailing_peak_price.borrow() {
+                    let expected_profit = open_price - self.take_profit_price.unwrap();
+                    let trailing_stop_ratio = expected_profit / open_price * Decimal::new(5, 1);
+                    let stop_price = trough * (Decimal::ONE + trailing_stop_ratio);
+                    log::warn!(
+                        "Trailing Stop [Short][{}]: {} - current_price: {:.2}, open_price: {:.2}, current_trough: {:.2}, expected_profit: {:.2}, stop_price: {:.2}, trailing_ratio: {:.4}",
+                        self.id,
+                        triggered,
+                        close_price,
+                        open_price,
+                        trough,
+                        open_price - close_price,
+                        stop_price,
+                        trailing_stop_ratio
+                    );
                 }
             }
         }
