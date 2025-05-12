@@ -462,20 +462,19 @@ impl TradePosition {
         assert!(new_state != self.state, "The same state: {:?}", new_state);
 
         match new_state {
-            State::Closing(_) => self.tick_count = 0,
+            State::Closing(_) => {
+                self.actual_hold_tick = self.tick_count;
+                self.tick_count = 0;
+            }
             State::Open => match self.state {
                 State::Opening => {
                     self.actual_entry_tick = self.tick_count;
                     self.tick_count = 0;
                     self.set_open_time();
                 }
-                State::Open => {
-                    self.tick_count = 0;
-                }
                 _ => {}
             },
             State::Closed(_) => {
-                self.actual_hold_tick = self.tick_count;
                 self.set_close_time();
             }
             _ => {}
