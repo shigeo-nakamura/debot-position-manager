@@ -472,6 +472,9 @@ impl TradePosition {
                     self.tick_count = 0;
                     self.set_open_time();
                 }
+                State::Closing(_) => {
+                    self.tick_count = self.max_holding_tick_count;
+                }
                 _ => {}
             },
             State::Closed(_) => {
