@@ -750,6 +750,14 @@ impl TradePosition {
         }
     }
 
+    pub fn take_profit_price(&self) -> Option<Decimal> {
+        self.take_profit_price
+    }
+
+    pub fn cut_loss_price(&self) -> Option<Decimal> {
+        self.cut_loss_price
+    }
+
     fn is_trailing_stop_triggered(&self, close_price: Decimal) -> bool {
         let open_price = self.average_open_price;
 
