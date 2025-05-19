@@ -568,8 +568,8 @@ impl TradePosition {
         self.tick_count += 1;
     }
 
-    pub fn should_close(&self, close_price: Decimal) -> Option<ReasonForClose> {
-        if self.should_take_profit(close_price) {
+    pub fn should_close(&self, close_price: Decimal, use_trailing: bool) -> Option<ReasonForClose> {
+        if self.should_take_profit(close_price, use_trailing) {
             return Some(ReasonForClose::TakeProfit);
         }
 
@@ -790,18 +790,19 @@ impl TradePosition {
         false
     }
 
-    pub fn should_take_profit(&self, close_price: Decimal) -> bool {
+    pub fn should_take_profit(&self, close_price: Decimal, use_trailing: bool) -> bool {
         if !matches!(self.state, State::Open) {
             return false;
         }
 
         let open_price = self.average_open_price;
+        let mut reached_tp = false;
 
         if let Some(tp_price) = self.take_profit_price {
             match self.position_type {
                 PositionType::Long => {
-                    // Start tracking peak once TP line is exceeded
                     if close_price >= tp_price {
+                        reached_tp = true;
                         let mut peak = self.trailing_peak_price.borrow_mut();
                         let current_peak = peak.get_or_insert(close_price.max(open_price));
                         if close_price > *current_peak {
@@ -811,6 +812,7 @@ impl TradePosition {
                 }
                 PositionType::Short => {
                     if close_price <= tp_price {
+                        reached_tp = true;
                         let mut trough = self.trailing_peak_price.borrow_mut();
                         let current_trough = trough.get_or_insert(close_price.min(open_price));
                         if close_price < *current_trough {
@@ -821,42 +823,32 @@ impl TradePosition {
             }
         }
 
+        if !use_trailing {
+            return reached_tp;
+        }
+
         let triggered = self.is_trailing_stop_triggered(close_price);
 
         match self.position_type {
             PositionType::Long => {
                 if let Some(peak) = *self.trailing_peak_price.borrow() {
-                    let expected_profit = self.take_profit_price.unwrap() - open_price;
-                    let trailing_stop_ratio = expected_profit / open_price * Decimal::new(5, 1);
-                    let stop_price = peak * (Decimal::ONE - trailing_stop_ratio);
+                    let expected = self.take_profit_price.unwrap() - open_price;
+                    let ratio = expected / open_price * Decimal::new(5, 1);
+                    let stop = peak * (Decimal::ONE - ratio);
                     log::warn!(
-                        "Trailing Stop [Long][{}]: {} - current_price: {:.2}, open_price: {:.2}, current_peak: {:.2}, expected_profit: {:.2}, stop_price: {:.2}, trailing_ratio: {:.4}",
-                        self.id,
-                        triggered,
-                        close_price,
-                        open_price,
-                        peak,
-                        close_price - open_price,
-                        stop_price,
-                        trailing_stop_ratio
+                        "Trailing Stop [Long][{}]: {} - price: {:.2}, open: {:.2}, peak: {:.2}, stop: {:.2}, ratio: {:.4}",
+                        self.id, triggered, close_price, open_price, peak, stop, ratio
                     );
                 }
             }
             PositionType::Short => {
                 if let Some(trough) = *self.trailing_peak_price.borrow() {
-                    let expected_profit = open_price - self.take_profit_price.unwrap();
-                    let trailing_stop_ratio = expected_profit / open_price * Decimal::new(5, 1);
-                    let stop_price = trough * (Decimal::ONE + trailing_stop_ratio);
+                    let expected = open_price - self.take_profit_price.unwrap();
+                    let ratio = expected / open_price * Decimal::new(5, 1);
+                    let stop = trough * (Decimal::ONE + ratio);
                     log::warn!(
-                        "Trailing Stop [Short][{}]: {} - current_price: {:.2}, open_price: {:.2}, current_trough: {:.2}, expected_profit: {:.2}, stop_price: {:.2}, trailing_ratio: {:.4}",
-                        self.id,
-                        triggered,
-                        close_price,
-                        open_price,
-                        trough,
-                        open_price - close_price,
-                        stop_price,
-                        trailing_stop_ratio
+                        "Trailing Stop [Short][{}]: {} - price: {:.2}, open: {:.2}, trough: {:.2}, stop: {:.2}, ratio: {:.4}",
+                        self.id, triggered, close_price, open_price, trough, stop, ratio
                     );
                 }
             }
