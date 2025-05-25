@@ -27,40 +27,36 @@ impl fmt::Display for ReasonForClose {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
-pub enum State {
+pub enum PositionState {
     #[default]
-    Opening,
+    None,
     Open,
     Closing(String),
     Closed(String),
 }
 
-impl fmt::Display for State {
+impl fmt::Display for PositionState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            State::Opening => write!(f, "Opening"),
-            State::Open => write!(f, "Open"),
-            State::Closing(reason) => write!(f, "Closing({})", reason),
-            State::Closed(reason) => write!(f, "Closed({})", reason),
+            PositionState::None => write!(f, "None"),
+            PositionState::Open => write!(f, "Open"),
+            PositionState::Closing(reason) => write!(f, "Closing({})", reason),
+            PositionState::Closed(reason) => write!(f, "Closed({})", reason),
         }
     }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
-pub struct TradePosition {
+pub struct Position {
     id: u32,
     fund_name: String,
-    order_id: String,
-    ordered_price: Decimal,
-    unfilled_amount: Decimal,
-    state: State,
+    state: PositionState,
     token_name: String,
     tick_count: u32,
     actual_entry_tick: u32,
     actual_hold_tick: u32,
-    entry_timeout_tick_count: u32,
-    exit_timeout_tick_count: u32,
     max_holding_tick_count: u32,
+    exit_timeout_tick_count: u32,
     open_time_str: String,
     open_timestamp: i64,
     close_time_str: String,
@@ -102,16 +98,37 @@ pub struct TradePosition {
     last_oracle_price: Option<Decimal>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
+pub enum OrderState {
+    #[default]
+    Open,
+    Canceled,
+    Filled,
+}
+
+impl fmt::Display for OrderState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OrderState::Open => write!(f, "Open"),
+            OrderState::Filled => write!(f, "Filled"),
+            OrderState::Canceled => write!(f, "Canceled"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct Order {
+    id: String,
+    unfilled_amount: Decimal,
+    state: OrderState,
+    tick_count: u32,
+    entry_timeout_tick_count: u32,
+}
+
 enum UpdateResult {
     Closed,
     Decreased,
     Inverted,
-}
-
-pub enum CancelResult {
-    OpeningCanceled,
-    ClosingCanceled,
-    PartiallyFilled,
 }
 
 pub enum OrderType {
@@ -119,13 +136,10 @@ pub enum OrderType {
     CloseOrder,
 }
 
-impl TradePosition {
+impl Position {
     pub fn new(
         id: u32,
         fund_name: &str,
-        order_id: &str,
-        ordered_amount: Decimal,
-        entry_timeout_tick_count: u32,
         exit_timeout_tick_count: u32,
         max_holding_tick_count: u32,
         token_name: &str,
@@ -159,16 +173,12 @@ impl TradePosition {
         Self {
             id,
             fund_name: fund_name.to_owned(),
-            order_id: order_id.to_owned(),
-            ordered_price: Decimal::ZERO,
-            unfilled_amount: ordered_amount,
             tick_count: 0,
             actual_entry_tick: 0,
             actual_hold_tick: 0,
-            entry_timeout_tick_count,
-            exit_timeout_tick_count,
             max_holding_tick_count,
-            state: State::Opening,
+            exit_timeout_tick_count,
+            state: PositionState::None,
             token_name: token_name.to_owned(),
             open_time_str: String::new(),
             open_timestamp: 0,
@@ -215,26 +225,12 @@ impl TradePosition {
         cut_loss_price: Option<Decimal>,
         current_price: Decimal,
     ) -> Result<(), ()> {
-        match self.state {
-            State::Opening => {
-                self.unfilled_amount -= amount;
-                if self.unfilled_amount.is_zero() {
-                    self.update_state(State::Open)
-                }
-            }
-            State::Open | State::Closing(_) => {}
-            _ => {
-                log::error!("on_filled: Invalid state: {}", self.state);
-                return Err(());
-            }
+        if !matches!(self.state, PositionState::Open | PositionState::Closing(_)) {
+            log::error!("on_filled: Invalid position state: {:?}", self);
+            return Err(());
         }
 
-        log::trace!(
-            "state = {}, unfilled_amount = {}, amount = {}",
-            self.state,
-            self.unfilled_amount,
-            amount
-        );
+        log::trace!("state = {}, amount = {}", self.state, amount);
 
         self.fee += fee;
 
@@ -260,9 +256,6 @@ impl TradePosition {
             );
         }
 
-        // To sort orders and the open position by order price(for debugging)
-        self.ordered_price = self.average_open_price;
-
         return Ok(());
     }
 
@@ -282,9 +275,9 @@ impl TradePosition {
             }
         } else {
             match self.state.clone() {
-                State::Closing(reason) => reason,
+                PositionState::Closing(reason) => reason,
                 _ => {
-                    log::error!("delete: Invalid state: {}", self.state);
+                    log::error!("delete: Invalid PositionState: {}", self.state);
                     return Err(());
                 }
             }
@@ -295,59 +288,15 @@ impl TradePosition {
         return Ok(());
     }
 
-    pub fn request_close(&mut self, order_id: &str, reason: &str) -> Result<(), ()> {
-        match self.state() {
-            State::Opening => {
-                if self.unfilled_amount.is_zero() {
-                    log::error!("request_close: Invalid state(1): {:?}", self);
-                    return Err(());
-                }
-            }
-            State::Open => {
-                log::debug!("request_close: reason = {}", reason.to_owned());
-            }
-            _ => {
-                log::error!("request_close: Invalid state(2): {:?}", self);
-                return Err(());
-            }
+    pub fn request_close(&mut self, reason: &str) -> Result<(), ()> {
+        if !matches!(self.state, PositionState::Open) {
+            log::error!("request_close: Invalid position state: {:?}", self);
+            return Err(());
         }
 
-        self.order_id = order_id.to_owned();
-        self.update_state(State::Closing(reason.to_owned()));
+        self.update_state(PositionState::Closing(reason.to_owned()));
 
         return Ok(());
-    }
-
-    pub fn cancel(&mut self) -> Result<CancelResult, ()> {
-        match self.state {
-            State::Opening => {
-                if self.amount.is_zero() {
-                    self.update_state(State::Closed(String::from("Not filled at all")));
-                    log::debug!("-- Canceled the opening order: {}", self.order_id);
-                    Ok(CancelResult::OpeningCanceled)
-                } else {
-                    self.update_state(State::Open);
-                    log::debug!(
-                        "-- This opening order is partially filled: {}",
-                        self.order_id
-                    );
-                    Ok(CancelResult::PartiallyFilled)
-                }
-            }
-            State::Closing(_) => {
-                self.update_state(State::Open);
-                log::info!("-- Canceling the closing order: {}", self.order_id);
-                Ok(CancelResult::ClosingCanceled)
-            }
-            _ => {
-                log::error!("cancel: Invalid state: {:?}", self);
-                Err(())
-            }
-        }
-    }
-
-    pub fn ignore(&mut self) {
-        self.update_state(State::Closed("Partially filled".to_owned()));
     }
 
     fn increase(
@@ -433,15 +382,10 @@ impl TradePosition {
     }
 
     fn delete(&mut self, close_price: Decimal, reason: &str) {
-        if self.state == State::Opening && self.amount.is_zero() {
-            self.update_state(State::Closed(reason.to_owned()));
-            return;
-        }
-
-        if let State::Closing(closing_reason) = self.state.clone() {
-            self.update_state(State::Closed(closing_reason));
+        if let PositionState::Closing(closing_reason) = self.state.clone() {
+            self.update_state(PositionState::Closed(closing_reason));
         } else {
-            self.update_state(State::Closed(reason.to_owned()));
+            self.update_state(PositionState::Closed(reason.to_owned()));
         }
 
         self.close_price = close_price;
@@ -458,26 +402,30 @@ impl TradePosition {
         );
     }
 
-    fn update_state(&mut self, new_state: State) {
-        assert!(new_state != self.state, "The same state: {:?}", new_state);
+    fn update_state(&mut self, new_state: PositionState) {
+        assert!(
+            new_state != self.state,
+            "The same PositionState: {:?}",
+            new_state
+        );
 
         match new_state {
-            State::Closing(_) => {
+            PositionState::Closing(_) => {
                 self.actual_hold_tick = self.tick_count;
                 self.tick_count = 0;
             }
-            State::Open => match self.state {
-                State::Opening => {
+            PositionState::Open => match self.state {
+                PositionState::None => {
                     self.actual_entry_tick = self.tick_count;
                     self.tick_count = 0;
                     self.set_open_time();
                 }
-                State::Closing(_) => {
+                PositionState::Closing(_) => {
                     self.tick_count = self.max_holding_tick_count;
                 }
                 _ => {}
             },
-            State::Closed(_) => {
+            PositionState::Closed(_) => {
                 self.set_close_time();
             }
             _ => {}
@@ -556,14 +504,6 @@ impl TradePosition {
         amount * price + asset_in_usd
     }
 
-    pub fn should_cancel_order(&self) -> bool {
-        match self.state {
-            State::Opening => self.tick_count > self.entry_timeout_tick_count,
-            State::Closing(_) => self.tick_count > self.exit_timeout_tick_count,
-            _ => false,
-        }
-    }
-
     pub fn update_counter(&mut self) {
         self.tick_count += 1;
     }
@@ -600,19 +540,11 @@ impl TradePosition {
         self.average_open_price
     }
 
-    pub fn order_id(&self) -> &str {
-        &self.order_id
-    }
-
-    pub fn ordered_price(&self) -> Decimal {
-        self.ordered_price
-    }
-
     pub fn predicted_price(&self) -> Decimal {
         self.predicted_price
     }
 
-    pub fn state(&self) -> State {
+    pub fn state(&self) -> PositionState {
         self.state.clone()
     }
 
@@ -622,10 +554,6 @@ impl TradePosition {
 
     pub fn amount(&self) -> Decimal {
         self.amount
-    }
-
-    pub fn unfilled_amount(&self) -> Decimal {
-        self.unfilled_amount
     }
 
     pub fn position_type(&self) -> PositionType {
@@ -742,7 +670,7 @@ impl TradePosition {
     }
 
     pub fn should_open_expired(&self, close_price: Decimal) -> bool {
-        if matches!(self.state, State::Open) {
+        if matches!(self.state, PositionState::Open) {
             self.tick_count > self.max_holding_tick_count
                 && !self.has_reached_take_profit(close_price)
         } else {
@@ -791,7 +719,7 @@ impl TradePosition {
     }
 
     pub fn should_take_profit(&self, close_price: Decimal, use_trailing: bool) -> bool {
-        if !matches!(self.state, State::Open) {
+        if !matches!(self.state, PositionState::Open) {
             return false;
         }
 
@@ -880,7 +808,7 @@ impl TradePosition {
     }
 
     fn should_cut_loss(&self, close_price: Decimal) -> bool {
-        if !matches!(self.state, State::Open) {
+        if !matches!(self.state, PositionState::Open) {
             return false;
         }
 
@@ -894,6 +822,20 @@ impl TradePosition {
             }
             None => false,
         }
+    }
+
+    pub fn should_cancel_closing(&self) -> bool {
+        match self.state {
+            PositionState::Closing(_) => self.tick_count > self.exit_timeout_tick_count,
+            _ => false,
+        }
+    }
+
+    pub fn cancel_closing(&mut self) {
+        if !matches!(self.state, PositionState::Closing(_)) {
+            log::warn!("cancel_closing: invalid state: {:?}", self);
+        }
+        self.state = PositionState::Open;
     }
 
     fn set_open_time(&mut self) {
@@ -916,7 +858,7 @@ impl TradePosition {
         let decimal_100 = Decimal::new(100, 0);
 
         format!(
-            "ID:{} {:<6}({}) un-pnl: {:3.3}({:.2}%), re-pnl: {:3.3}, [{}] price: {:>6.3}/{:>6.3}({:.3}%), cut: {:>6.3}({:.3}%), take: {:>6.3}({:.3}%), amount: {:6.6}({:6.6})/{:6.6}",
+            "ID:{} {:<6}({}) un-pnl: {:3.3}({:.2}%), re-pnl: {:3.3}, [{}] price: {:>6.3}/{:>6.3}({:.3}%), cut: {:>6.3}({:.3}%), take: {:>6.3}({:.3}%), amount: {:6.6}/{:6.6}",
             self.id,
             self.token_name,
             self.state,
@@ -932,7 +874,6 @@ impl TradePosition {
             take_profit_price,
             (take_profit_price - current_price) / current_price * decimal_100,
             self.amount,
-            self.unfilled_amount,
             self.asset_in_usd
         )
     }
@@ -941,5 +882,67 @@ impl TradePosition {
         if !self.amount.is_zero() {
             log::debug!("{}", self.format_position(current_price));
         }
+    }
+}
+
+impl Order {
+    pub fn new(id: String, amount: Decimal, entry_timeout_tick_count: u32) -> Order {
+        Self {
+            id,
+            unfilled_amount: amount,
+            state: OrderState::Open,
+            tick_count: 0,
+            entry_timeout_tick_count,
+        }
+    }
+
+    pub fn on_filled(&mut self, amount: Decimal) -> Result<(), ()> {
+        if matches!(self.state, OrderState::Filled | OrderState::Canceled) {
+            log::warn!(
+                "The order is filled unexpectedly: id = {}, state = {}, amount = {}",
+                self.id,
+                self.state,
+                amount
+            );
+            return Err(());
+        }
+
+        self.unfilled_amount -= amount;
+        if self.unfilled_amount.is_zero() {
+            self.state = OrderState::Filled;
+        }
+
+        log::info!(
+            "Order filled: id = {}, state = {}, unfilled_amount = {}",
+            self.id,
+            self.state,
+            self.unfilled_amount
+        );
+
+        return Ok(());
+    }
+
+    pub fn should_cancel_order(&self) -> bool {
+        if matches!(self.state, OrderState::Open) {
+            self.tick_count > self.entry_timeout_tick_count
+        } else {
+            false
+        }
+    }
+
+    pub fn cancel(&mut self) {
+        self.state = OrderState::Canceled;
+    }
+
+    pub fn update_counter(&mut self) {
+        self.tick_count += 1;
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub fn state(&self) -> OrderState {
+        self.state.clone()
     }
 }
