@@ -102,7 +102,6 @@ pub struct Position {
 pub enum OrderState {
     #[default]
     Open,
-    Canceled,
     Filled,
 }
 
@@ -111,7 +110,6 @@ impl fmt::Display for OrderState {
         match self {
             OrderState::Open => write!(f, "Open"),
             OrderState::Filled => write!(f, "Filled"),
-            OrderState::Canceled => write!(f, "Canceled"),
         }
     }
 }
@@ -897,7 +895,7 @@ impl Order {
     }
 
     pub fn on_filled(&mut self, amount: Decimal) -> Result<(), ()> {
-        if matches!(self.state, OrderState::Filled | OrderState::Canceled) {
+        if matches!(self.state, OrderState::Filled) {
             log::warn!(
                 "The order is filled unexpectedly: id = {}, state = {}, amount = {}",
                 self.id,
@@ -928,10 +926,6 @@ impl Order {
         } else {
             false
         }
-    }
-
-    pub fn cancel(&mut self) {
-        self.state = OrderState::Canceled;
     }
 
     pub fn update_counter(&mut self) {
