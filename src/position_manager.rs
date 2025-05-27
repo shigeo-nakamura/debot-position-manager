@@ -223,7 +223,10 @@ impl Position {
         cut_loss_price: Option<Decimal>,
         current_price: Decimal,
     ) -> Result<(), ()> {
-        if !matches!(self.state, PositionState::Open | PositionState::Closing(_)) {
+        if !matches!(
+            self.state,
+            PositionState::None | PositionState::Open | PositionState::Closing(_)
+        ) {
             log::error!("on_filled: Invalid position state: {:?}", self);
             return Err(());
         }
@@ -231,6 +234,10 @@ impl Position {
         log::trace!("state = {}, amount = {}", self.state, amount);
 
         self.fee += fee;
+
+        if self.state == PositionState::None {
+            self.position_type = position_type.clone();
+        }
 
         if self.position_type == position_type {
             self.increase(
@@ -336,6 +343,7 @@ impl Position {
         };
 
         self.update_amount(position_type, amount, asset_in_usd);
+        self.update_state(PositionState::Open);
 
         log::info!(
             "+ Increase the position: {}",
@@ -393,9 +401,11 @@ impl Position {
         self.asset_in_usd = Decimal::new(0, 0);
 
         log::info!(
-            "-- Close the position[{}]: {}, pnl: {:.3?}",
+            "-- Close the position[{}][{}]: {}, amount: {:.3}, pnl: {:.3?}",
+            self.id,
             self.position_type,
-            reason,
+            self.state,
+            self.amount,
             self.pnl
         );
     }
@@ -419,7 +429,7 @@ impl Position {
                     self.set_open_time();
                 }
                 PositionState::Closing(_) => {
-                    self.tick_count = self.max_holding_tick_count;
+                    return;
                 }
                 _ => {}
             },
@@ -503,7 +513,9 @@ impl Position {
     }
 
     pub fn update_counter(&mut self) {
-        self.tick_count += 1;
+        if matches!(self.state, PositionState::Open | PositionState::Closing(_)) {
+            self.tick_count += 1;
+        }
     }
 
     pub fn should_close(&self, close_price: Decimal, use_trailing: bool) -> Option<ReasonForClose> {
@@ -856,10 +868,16 @@ impl Position {
         let decimal_100 = Decimal::new(100, 0);
 
         format!(
-            "ID:{} {:<6}({}) un-pnl: {:3.3}({:.2}%), re-pnl: {:3.3}, [{}] price: {:>6.3}/{:>6.3}({:.3}%), cut: {:>6.3}({:.3}%), take: {:>6.3}({:.3}%), amount: {:6.6}/{:6.6}",
+            "ID:{} {:<6}({}) tick: {}/{}, un-pnl: {:3.3}({:.2}%), re-pnl: {:3.3}, [{}] price: {:>6.3}/{:>6.3}({:.3}%), cut: {:>6.3}({:.3}%), take: {:>6.3}({:.3}%), amount: {:6.6}/{:6.6}",
             self.id,
             self.token_name,
             self.state,
+            self.tick_count,
+            if matches!(self.state, PositionState::Closing(_)) {
+                self.exit_timeout_tick_count
+            } else {
+                self.max_holding_tick_count
+            },
             unrealized_pnl,
             unrealized_pnl / self.asset_in_usd.abs() * decimal_100,
             self.pnl,
@@ -876,9 +894,11 @@ impl Position {
         )
     }
 
-    pub fn print_info(&self, current_price: Decimal) {
-        if !self.amount.is_zero() {
-            log::debug!("{}", self.format_position(current_price));
+    pub fn get_info(&self, current_price: Decimal) -> Option<String> {
+        if self.amount.is_zero() {
+            None
+        } else {
+            Some(format!("{}", self.format_position(current_price)))
         }
     }
 }
@@ -929,7 +949,9 @@ impl Order {
     }
 
     pub fn update_counter(&mut self) {
-        self.tick_count += 1;
+        if matches!(self.state, OrderState::Open) {
+            self.tick_count += 1;
+        }
     }
 
     pub fn id(&self) -> &str {
