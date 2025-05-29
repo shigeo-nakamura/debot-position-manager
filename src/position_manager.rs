@@ -91,6 +91,7 @@ pub struct Position {
     risk_reward: Decimal,
     atr_term: Decimal,
     tick_spread: i64,
+    bias_ticks: i64,
     last_volume: Option<Decimal>,
     last_num_trades: Option<u64>,
     last_funding_rate: Option<Decimal>,
@@ -161,6 +162,7 @@ impl Position {
         risk_reward: Decimal,
         atr_term: Decimal,
         tick_spread: i64,
+        bias_ticks: i64,
         last_volume: Option<Decimal>,
         last_num_trades: Option<u64>,
         last_funding_rate: Option<Decimal>,
@@ -204,6 +206,7 @@ impl Position {
             risk_reward,
             atr_term,
             tick_spread,
+            bias_ticks,
             last_volume,
             last_num_trades,
             last_funding_rate,
@@ -677,6 +680,10 @@ impl Position {
 
     pub fn tick_spread(&self) -> i64 {
         self.tick_spread
+    }
+
+    pub fn bias_ticks(&self) -> i64 {
+        self.bias_ticks
     }
 
     pub fn should_open_expired(&self, close_price: Decimal) -> bool {
