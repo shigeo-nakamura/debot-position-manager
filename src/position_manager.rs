@@ -368,7 +368,12 @@ impl Position {
 
         match self.update_amount_and_pnl(position_type, amount, asset_in_usd, filled_price) {
             UpdateResult::Closed => {
-                self.delete(filled_price, "CounterTrade");
+                let reason = if self.pnl > Decimal::ZERO {
+                    "TakeProfit"
+                } else {
+                    "CutLoss"
+                };
+                self.delete(filled_price, reason);
                 return;
             }
             UpdateResult::Inverted => {
@@ -760,6 +765,8 @@ impl Position {
                     }
                 }
             }
+        } else {
+            return false;
         }
 
         if !use_trailing {
