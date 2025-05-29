@@ -414,12 +414,6 @@ impl Position {
     }
 
     fn update_state(&mut self, new_state: PositionState) {
-        assert!(
-            new_state != self.state,
-            "The same PositionState: {:?}",
-            new_state
-        );
-
         match new_state {
             PositionState::Closing(_) => {
                 self.actual_hold_tick = self.tick_count;
