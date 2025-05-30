@@ -62,7 +62,7 @@ pub struct Position {
     close_time_str: String,
     average_open_price: Decimal,
     position_type: PositionType,
-    predicted_price: Decimal,
+    target_price: Decimal,
     take_profit_price: Option<Decimal>,
     cut_loss_price: Option<Decimal>,
     close_price: Decimal,
@@ -143,7 +143,7 @@ impl Position {
         max_holding_tick_count: u32,
         token_name: &str,
         position_type: PositionType,
-        predicted_price: Decimal,
+        target_price: Decimal,
         atr: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
         adx: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
         rsi: (Decimal, Decimal, Decimal, Decimal, Decimal, Decimal),
@@ -185,7 +185,7 @@ impl Position {
             close_time_str: String::new(),
             average_open_price: decimal_0,
             position_type,
-            predicted_price,
+            target_price,
             take_profit_price: None,
             cut_loss_price: None,
             close_price: decimal_0,
@@ -552,8 +552,8 @@ impl Position {
         self.average_open_price
     }
 
-    pub fn predicted_price(&self) -> Decimal {
-        self.predicted_price
+    pub fn target_price(&self) -> Decimal {
+        self.target_price
     }
 
     pub fn state(&self) -> PositionState {
