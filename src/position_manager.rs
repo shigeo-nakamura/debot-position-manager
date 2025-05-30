@@ -876,7 +876,7 @@ impl Position {
         let decimal_100 = Decimal::new(100, 0);
 
         format!(
-            "ID:{} {:<6}({}) tick: {}/{}, un-pnl: {:3.3}({:.2}%), re-pnl: {:3.3}, [{}] price: {:>6.3}/{:>6.3}({:.3}%), cut: {:>6.3}({:.3}%), take: {:>6.3}({:.3}%), amount: {:6.6}/{:6.6}",
+            "ID:{} {:<6}({}) tick: {}/{}, un-pnl: {:3.3}({:.2}%), [{}] price: {:>6.5}/{:>6.5}({:.3}%), cut: {:>6.3}, take: {:>6.3}, amount: {:6.6}/{:6.6}",
             self.id,
             self.token_name,
             self.state,
@@ -888,15 +888,17 @@ impl Position {
             },
             unrealized_pnl,
             unrealized_pnl / self.asset_in_usd.abs() * decimal_100,
-            self.pnl,
             self.position_type,
             current_price,
             open_price,
-            (open_price - current_price) / current_price * decimal_100,
+            if self.position_type == PositionType::Long {
+                current_price - open_price
+            }
+            else {
+                open_price - current_price
+             } / open_price * decimal_100,
             cut_loss_price,
-            (cut_loss_price - current_price) / current_price * decimal_100,
             take_profit_price,
-            (take_profit_price - current_price) / current_price * decimal_100,
             self.amount,
             self.asset_in_usd
         )
