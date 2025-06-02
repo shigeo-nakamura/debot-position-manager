@@ -29,7 +29,7 @@ impl fmt::Display for ReasonForClose {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
 pub enum PositionState {
     #[default]
-    None,
+    Ready,
     Open,
     Closing(String),
     Closed(String),
@@ -38,7 +38,7 @@ pub enum PositionState {
 impl fmt::Display for PositionState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PositionState::None => write!(f, "None"),
+            PositionState::Ready => write!(f, "Ready"),
             PositionState::Open => write!(f, "Open"),
             PositionState::Closing(reason) => write!(f, "Closing({})", reason),
             PositionState::Closed(reason) => write!(f, "Closed({})", reason),
@@ -178,7 +178,7 @@ impl Position {
             actual_hold_tick: 0,
             max_holding_tick_count,
             exit_timeout_tick_count,
-            state: PositionState::None,
+            state: PositionState::Ready,
             token_name: token_name.to_owned(),
             open_time_str: String::new(),
             open_timestamp: 0,
@@ -226,10 +226,7 @@ impl Position {
         cut_loss_price: Option<Decimal>,
         current_price: Decimal,
     ) -> Result<(), ()> {
-        if !matches!(
-            self.state,
-            PositionState::None | PositionState::Open | PositionState::Closing(_)
-        ) {
+        if matches!(self.state, PositionState::Closed(_)) {
             log::error!("on_filled: Invalid position state: {:?}", self);
             return Err(());
         }
@@ -238,7 +235,7 @@ impl Position {
 
         self.fee += fee;
 
-        if self.state == PositionState::None {
+        if self.state == PositionState::Ready {
             self.position_type = position_type.clone();
         }
 
@@ -425,7 +422,7 @@ impl Position {
                 self.tick_count = 0;
             }
             PositionState::Open => match self.state {
-                PositionState::None => {
+                PositionState::Ready => {
                     self.actual_entry_tick = self.tick_count;
                     self.tick_count = 0;
                     self.set_open_time();
@@ -515,9 +512,7 @@ impl Position {
     }
 
     pub fn update_counter(&mut self) {
-        if matches!(self.state, PositionState::Open | PositionState::Closing(_)) {
-            self.tick_count += 1;
-        }
+        self.tick_count += 1;
     }
 
     pub fn should_close(&self, close_price: Decimal, use_trailing: bool) -> Option<ReasonForClose> {
